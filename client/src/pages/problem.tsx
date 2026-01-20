@@ -158,6 +158,17 @@ export default function ProblemPage() {
       <main className="container mx-auto px-4 py-8 max-w-4xl">
         <div className="flex items-center justify-between mb-6 gap-4 flex-wrap">
           <h1 className="text-2xl font-bold">{problem.title}</h1>
+          <div className="flex items-center gap-2">
+            {!editMode && (
+              <Button
+                onClick={() => setEditMode(true)}
+                variant="outline"
+                data-testid="button-edit-content"
+              >
+                <Edit className="h-4 w-4 mr-2" />
+                コンテンツを編集
+              </Button>
+            )}
           {editMode && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -186,6 +197,7 @@ export default function ProblemPage() {
               </DropdownMenuContent>
             </DropdownMenu>
           )}
+          </div>
         </div>
 
         {blocks.length === 0 ? (
@@ -262,20 +274,7 @@ export default function ProblemPage() {
           </div>
         )}
 
-        {!editMode && blocks.length > 0 && (
-          <div className="mt-8 text-center">
-            <Button
-              onClick={() => setEditMode(true)}
-              variant="outline"
-              size="lg"
-              data-testid="button-edit-content"
-            >
-              <Edit className="h-4 w-4 mr-2" />
-              コンテンツを編集
-            </Button>
-          </div>
-        )}
-      </main>
+              </main>
 
       {editMode && (
         <div className="fixed bottom-0 left-0 right-0 bg-background/95 backdrop-blur border-t p-4 z-50">
