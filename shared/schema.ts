@@ -1,52 +1,100 @@
+import { pgTable, text, integer, jsonb, timestamp } from "drizzle-orm/pg-core";
+import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
+import { relations } from "drizzle-orm";
 
-// Chapter schema
-export const chapterSchema = z.object({
-  id: z.string(),
-  title: z.string(),
-  genre: z.string(),
-  icon: z.string().optional(),
-  order: z.number(),
-  createdAt: z.string(),
+// ============================================
+// Drizzle Table Definitions
+// ============================================
+
+// Chapters table
+export const chapters = pgTable("chapters", {
+  id: text("id").primaryKey(),
+  title: text("title").notNull(),
+  genre: text("genre").notNull().default(""),
+  icon: text("icon"),
+  order: integer("order").notNull().default(0),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
-export const insertChapterSchema = chapterSchema.omit({ id: true, createdAt: true });
-
-export type Chapter = z.infer<typeof chapterSchema>;
-export type InsertChapter = z.infer<typeof insertChapterSchema>;
-
-// Problem schema
-export const problemSchema = z.object({
-  id: z.string(),
-  chapterId: z.string(),
-  title: z.string(),
-  order: z.number(),
-  createdAt: z.string(),
+// Problems table
+export const problems = pgTable("problems", {
+  id: text("id").primaryKey(),
+  chapterId: text("chapter_id").notNull().references(() => chapters.id, { onDelete: "cascade" }),
+  title: text("title").notNull(),
+  order: integer("order").notNull().default(0),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
-export const insertProblemSchema = problemSchema.omit({ id: true, createdAt: true });
+// Blocks table
+export const blocks = pgTable("blocks", {
+  id: text("id").primaryKey(),
+  problemId: text("problem_id").notNull().references(() => problems.id, { onDelete: "cascade" }),
+  type: text("type").notNull(), // "problem" | "code" | "text"
+  content: jsonb("content").notNull(),
+  order: integer("order").notNull().default(0),
+});
 
-export type Problem = z.infer<typeof problemSchema>;
-export type InsertProblem = z.infer<typeof insertProblemSchema>;
+// ============================================
+// Relations
+// ============================================
+
+export const chaptersRelations = relations(chapters, ({ many }) => ({
+  problems: many(problems),
+}));
+
+export const problemsRelations = relations(problems, ({ one, many }) => ({
+  chapter: one(chapters, {
+    fields: [problems.chapterId],
+    references: [chapters.id],
+  }),
+  blocks: many(blocks),
+}));
+
+export const blocksRelations = relations(blocks, ({ one }) => ({
+  problem: one(problems, {
+    fields: [blocks.problemId],
+    references: [problems.id],
+  }),
+}));
+
+// ============================================
+// Zod Schemas and Types
+// ============================================
+
+// Insert schemas from Drizzle
+export const insertChapterSchema = createInsertSchema(chapters).omit({ 
+  id: true, 
+  createdAt: true 
+});
+
+export const insertProblemSchema = createInsertSchema(problems).omit({ 
+  id: true, 
+  createdAt: true 
+});
+
+export const insertBlockSchema = createInsertSchema(blocks).omit({ 
+  id: true 
+});
 
 // Block types
 export const blockTypeSchema = z.enum(["problem", "code", "text"]);
 export type BlockType = z.infer<typeof blockTypeSchema>;
 
-// Problem block
+// Problem block content
 export const problemBlockContentSchema = z.object({
   text: z.string(),
   images: z.array(z.string()),
   videoUrl: z.string().optional(),
 });
 
-// Code block
+// Code block content
 export const codeBlockContentSchema = z.object({
   code: z.string(),
   language: z.string(),
 });
 
-// Text block
+// Text block content
 export const textBlockContentSchema = z.object({
   text: z.string(),
 });
@@ -58,24 +106,24 @@ export const blockContentSchema = z.union([
   textBlockContentSchema,
 ]);
 
-// Block schema
-export const blockSchema = z.object({
-  id: z.string(),
-  problemId: z.string(),
-  type: blockTypeSchema,
-  content: blockContentSchema,
-  order: z.number(),
-});
+// ============================================
+// Types
+// ============================================
 
-export const insertBlockSchema = blockSchema.omit({ id: true });
+export type Chapter = typeof chapters.$inferSelect;
+export type InsertChapter = z.infer<typeof insertChapterSchema>;
 
-export type Block = z.infer<typeof blockSchema>;
+export type Problem = typeof problems.$inferSelect;
+export type InsertProblem = z.infer<typeof insertProblemSchema>;
+
+export type Block = typeof blocks.$inferSelect;
 export type InsertBlock = z.infer<typeof insertBlockSchema>;
+
 export type ProblemBlockContent = z.infer<typeof problemBlockContentSchema>;
 export type CodeBlockContent = z.infer<typeof codeBlockContentSchema>;
 export type TextBlockContent = z.infer<typeof textBlockContentSchema>;
 
-// App settings
+// App settings (for local storage only)
 export const settingsSchema = z.object({
   geminiApiKey: z.string().optional(),
 });

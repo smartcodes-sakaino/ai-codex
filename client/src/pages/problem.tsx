@@ -1,8 +1,17 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useParams, useLocation } from "wouter";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { Plus, Edit, Save, X, ChevronDown, FileText, Loader2 } from "lucide-react";
-import { storage } from "@/lib/storage";
-import type { Chapter, Problem, Block, ProblemBlockContent, CodeBlockContent, TextBlockContent } from "@shared/schema";
+import { queryClient } from "@/lib/queryClient";
+import {
+  fetchProblemWithBlocks,
+  fetchChapter,
+  createBlock,
+  updateBlock,
+  deleteBlock,
+  reorderBlocks,
+} from "@/lib/api";
+import type { Block, ProblemBlockContent, CodeBlockContent, TextBlockContent } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { Breadcrumb } from "@/components/breadcrumb";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -29,32 +38,61 @@ import {
 export default function ProblemPage() {
   const { id } = useParams<{ id: string }>();
   const [, setLocation] = useLocation();
-  const [problem, setProblem] = useState<Problem | null>(null);
-  const [chapter, setChapter] = useState<Chapter | null>(null);
-  const [blocks, setBlocks] = useState<Block[]>([]);
   const [editMode, setEditMode] = useState(false);
   const [deleteBlockId, setDeleteBlockId] = useState<string | null>(null);
-  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [localBlocks, setLocalBlocks] = useState<Block[] | null>(null);
 
-  useEffect(() => {
-    if (id) {
-      loadData();
-    }
-  }, [id]);
+  const {
+    data: problemData,
+    isLoading: isProblemLoading,
+    isError: isProblemError,
+  } = useQuery({
+    queryKey: ["/api/problems", id],
+    queryFn: () => fetchProblemWithBlocks(id!),
+    enabled: !!id,
+  });
 
-  const loadData = () => {
-    if (!id) return;
-    const problemWithBlocks = storage.getProblemWithBlocks(id);
-    if (!problemWithBlocks) {
-      setLocation("/");
-      return;
-    }
-    setProblem(problemWithBlocks);
-    setBlocks(problemWithBlocks.blocks);
+  const {
+    data: chapter,
+    isLoading: isChapterLoading,
+  } = useQuery({
+    queryKey: ["/api/chapters", problemData?.chapterId],
+    queryFn: () => fetchChapter(problemData!.chapterId),
+    enabled: !!problemData?.chapterId,
+  });
 
-    const chapterData = storage.getChapter(problemWithBlocks.chapterId);
-    setChapter(chapterData || null);
-  };
+  const blocks = localBlocks ?? problemData?.blocks ?? [];
+
+  const createBlockMutation = useMutation({
+    mutationFn: createBlock,
+    onSuccess: (newBlock) => {
+      setLocalBlocks([...blocks, newBlock]);
+    },
+  });
+
+  const updateBlockMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Partial<{ content: ProblemBlockContent | CodeBlockContent | TextBlockContent }> }) =>
+      updateBlock(id, data),
+    onSuccess: (updatedBlock) => {
+      setLocalBlocks(blocks.map((b) => (b.id === updatedBlock.id ? updatedBlock : b)));
+    },
+  });
+
+  const deleteBlockMutation = useMutation({
+    mutationFn: deleteBlock,
+    onSuccess: (_, deletedId) => {
+      const updatedBlocks = blocks.filter((b) => b.id !== deletedId);
+      const reorderedBlocks = updatedBlocks.map((b, i) => ({ ...b, order: i }));
+      setLocalBlocks(reorderedBlocks);
+      if (reorderedBlocks.length > 0) {
+        reorderBlocksMutation.mutate(reorderedBlocks.map((b) => b.id));
+      }
+    },
+  });
+
+  const reorderBlocksMutation = useMutation({
+    mutationFn: reorderBlocks,
+  });
 
   const handleAddBlock = (type: "problem" | "code" | "text") => {
     if (!id) return;
@@ -68,36 +106,24 @@ export default function ProblemPage() {
       content = { text: "" };
     }
 
-    const newBlock = storage.createBlock({
+    createBlockMutation.mutate({
       problemId: id,
       type,
       content,
       order: blocks.length,
     });
 
-    setBlocks([...blocks, newBlock]);
-    setHasUnsavedChanges(true);
     if (!editMode) setEditMode(true);
   };
 
   const handleUpdateBlock = (blockId: string, content: ProblemBlockContent | CodeBlockContent | TextBlockContent) => {
-    const block = blocks.find((b) => b.id === blockId);
-    if (!block) return;
-
-    storage.updateBlock(blockId, { content });
-    setBlocks(blocks.map((b) => (b.id === blockId ? { ...b, content } : b)));
-    setHasUnsavedChanges(true);
+    updateBlockMutation.mutate({ id: blockId, data: { content } });
   };
 
   const handleDeleteBlock = () => {
     if (!deleteBlockId) return;
-    storage.deleteBlock(deleteBlockId);
-    const updatedBlocks = blocks.filter((b) => b.id !== deleteBlockId);
-    const reorderedBlocks = updatedBlocks.map((b, i) => ({ ...b, order: i }));
-    storage.reorderBlocks(reorderedBlocks);
-    setBlocks(reorderedBlocks);
+    deleteBlockMutation.mutate(deleteBlockId);
     setDeleteBlockId(null);
-    setHasUnsavedChanges(true);
   };
 
   const handleMoveBlock = (blockId: string, direction: "up" | "down") => {
@@ -111,26 +137,30 @@ export default function ProblemPage() {
     [newBlocks[index], newBlocks[newIndex]] = [newBlocks[newIndex], newBlocks[index]];
 
     const reorderedBlocks = newBlocks.map((b, i) => ({ ...b, order: i }));
-    storage.reorderBlocks(reorderedBlocks);
-    setBlocks(reorderedBlocks);
-    setHasUnsavedChanges(true);
+    setLocalBlocks(reorderedBlocks);
+    reorderBlocksMutation.mutate(reorderedBlocks.map((b) => b.id));
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
+    await queryClient.invalidateQueries({ queryKey: ["/api/problems", id] });
+    setLocalBlocks(null);
     setEditMode(false);
-    setHasUnsavedChanges(false);
   };
 
   const handleCancel = () => {
-    loadData();
+    setLocalBlocks(null);
     setEditMode(false);
-    setHasUnsavedChanges(false);
   };
 
   const problemBlocks = blocks.filter((b) => b.type === "problem");
   const codeBlocks = blocks.filter((b) => b.type === "code");
 
-  if (!problem || !chapter) {
+  if (isProblemError) {
+    setLocation("/");
+    return null;
+  }
+
+  if (isProblemLoading || isChapterLoading || !problemData || !chapter) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center">
@@ -148,7 +178,7 @@ export default function ProblemPage() {
           <Breadcrumb
             items={[
               { label: chapter.title, href: `/chapter/${chapter.id}` },
-              { label: problem.title },
+              { label: problemData.title },
             ]}
           />
           <ThemeToggle />
@@ -157,7 +187,7 @@ export default function ProblemPage() {
 
       <main className="container mx-auto px-4 py-8 max-w-4xl">
         <div className="flex items-center justify-between mb-6 gap-4 flex-wrap">
-          <h1 className="text-2xl font-bold">{problem.title}</h1>
+          <h1 className="text-2xl font-bold">{problemData.title}</h1>
           <div className="flex items-center gap-2">
             {!editMode && (
               <Button

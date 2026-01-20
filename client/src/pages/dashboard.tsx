@@ -1,6 +1,8 @@
-import { useState, useEffect } from "react";
-import { Plus, Edit, BookOpen, GripVertical, ChevronUp, ChevronDown, Filter, ArrowUpDown, Pencil } from "lucide-react";
-import { storage } from "@/lib/storage";
+import { useState } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { Plus, Edit, BookOpen, ChevronUp, ChevronDown, Filter, ArrowUpDown, Loader2 } from "lucide-react";
+import { fetchChapters, fetchGenres, createChapter, updateChapter, deleteChapter, reorderChapters } from "@/lib/api";
+import { queryClient } from "@/lib/queryClient";
 import type { ChapterWithCount } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -37,7 +39,6 @@ import {
 type SortOption = "order" | "name" | "createdAt";
 
 export default function Dashboard() {
-  const [chapters, setChapters] = useState<ChapterWithCount[]>([]);
   const [editMode, setEditMode] = useState(false);
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [newChapterTitle, setNewChapterTitle] = useState("");
@@ -45,7 +46,6 @@ export default function Dashboard() {
   const [newChapterGenreInput, setNewChapterGenreInput] = useState("");
   const [useNewGenre, setUseNewGenre] = useState(false);
   const [deleteChapterId, setDeleteChapterId] = useState<string | null>(null);
-  const [existingGenres, setExistingGenres] = useState<string[]>([]);
   const [filterGenre, setFilterGenre] = useState<string>("all");
   const [sortBy, setSortBy] = useState<SortOption>("order");
   const [editChapter, setEditChapter] = useState<ChapterWithCount | null>(null);
@@ -58,19 +58,49 @@ export default function Dashboard() {
   const [editTitleError, setEditTitleError] = useState("");
   const [editGenreError, setEditGenreError] = useState("");
 
-  useEffect(() => {
-    loadChapters();
-    loadGenres();
-  }, []);
+  const { data: chapters = [], isLoading: isLoadingChapters } = useQuery({
+    queryKey: ["/api/chapters"],
+    queryFn: fetchChapters,
+  });
 
-  const loadChapters = () => {
-    const data = storage.getChaptersWithCount();
-    setChapters(data.sort((a, b) => a.order - b.order));
-  };
+  const { data: existingGenres = [] } = useQuery({
+    queryKey: ["/api/genres"],
+    queryFn: fetchGenres,
+  });
 
-  const loadGenres = () => {
-    setExistingGenres(storage.getGenres());
-  };
+  const createChapterMutation = useMutation({
+    mutationFn: createChapter,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/chapters"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/genres"] });
+    },
+  });
+
+  const updateChapterMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Parameters<typeof updateChapter>[1] }) =>
+      updateChapter(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/chapters"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/genres"] });
+    },
+  });
+
+  const deleteChapterMutation = useMutation({
+    mutationFn: deleteChapter,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/chapters"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/genres"] });
+    },
+  });
+
+  const reorderChaptersMutation = useMutation({
+    mutationFn: reorderChapters,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/chapters"] });
+    },
+  });
+
+  const sortedChapters = [...chapters].sort((a, b) => a.order - b.order);
 
   const getFilteredAndSortedChapters = () => {
     let filtered = [...chapters];
@@ -120,7 +150,7 @@ export default function Dashboard() {
     
     const isNewGenreMode = useNewGenre || existingGenres.length === 0;
     const genre = isNewGenreMode ? newChapterGenreInput.trim() : newChapterGenre;
-    storage.createChapter({
+    createChapterMutation.mutate({
       title: newChapterTitle.trim(),
       genre: genre,
       order: chapters.length,
@@ -130,16 +160,12 @@ export default function Dashboard() {
     setNewChapterGenreInput("");
     setUseNewGenre(false);
     setShowAddDialog(false);
-    loadChapters();
-    loadGenres();
   };
 
   const handleDeleteChapter = () => {
     if (deleteChapterId) {
-      storage.deleteChapter(deleteChapterId);
+      deleteChapterMutation.mutate(deleteChapterId);
       setDeleteChapterId(null);
-      loadChapters();
-      loadGenres();
     }
   };
 
@@ -151,12 +177,11 @@ export default function Dashboard() {
     const newIndex = direction === "up" ? index - 1 : index + 1;
     if (newIndex < 0 || newIndex >= sorted.length) return;
     
-    const temp = sorted[index].order;
-    sorted[index].order = sorted[newIndex].order;
-    sorted[newIndex].order = temp;
+    const reordered = [...sorted];
+    [reordered[index], reordered[newIndex]] = [reordered[newIndex], reordered[index]];
     
-    storage.reorderChapters(sorted);
-    loadChapters();
+    const orderedIds = reordered.map((c) => c.id);
+    reorderChaptersMutation.mutate(orderedIds);
   };
 
   const openEditDialog = (chapter: ChapterWithCount) => {
@@ -194,16 +219,25 @@ export default function Dashboard() {
     
     const isNewGenreMode = editUseNewGenre || existingGenres.length === 0;
     const genre = isNewGenreMode ? editGenreInput.trim() : editGenre;
-    storage.updateChapter(editChapter.id, {
-      title: editTitle.trim(),
-      genre: genre,
+    updateChapterMutation.mutate({
+      id: editChapter.id,
+      data: {
+        title: editTitle.trim(),
+        genre: genre,
+      },
     });
     setEditChapter(null);
-    loadChapters();
-    loadGenres();
   };
 
   const displayedChapters = getFilteredAndSortedChapters();
+
+  if (isLoadingChapters) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background">
@@ -318,7 +352,7 @@ export default function Dashboard() {
                       variant="outline"
                       size="icon"
                       onClick={() => handleMoveChapter(chapter.id, "up")}
-                      disabled={chapters.sort((a, b) => a.order - b.order).findIndex((c) => c.id === chapter.id) === 0}
+                      disabled={sortedChapters.findIndex((c) => c.id === chapter.id) === 0}
                       data-testid={`button-move-up-${chapter.id}`}
                     >
                       <ChevronUp className="h-4 w-4" />
@@ -327,7 +361,7 @@ export default function Dashboard() {
                       variant="outline"
                       size="icon"
                       onClick={() => handleMoveChapter(chapter.id, "down")}
-                      disabled={chapters.sort((a, b) => a.order - b.order).findIndex((c) => c.id === chapter.id) === chapters.length - 1}
+                      disabled={sortedChapters.findIndex((c) => c.id === chapter.id) === chapters.length - 1}
                       data-testid={`button-move-down-${chapter.id}`}
                     >
                       <ChevronDown className="h-4 w-4" />
@@ -402,9 +436,13 @@ export default function Dashboard() {
             </Button>
             <Button
               onClick={handleAddChapter}
+              disabled={createChapterMutation.isPending}
               className="bg-gradient-to-r from-[#FF8C42] to-[#FFA566] text-white"
               data-testid="button-confirm-add-chapter"
             >
+              {createChapterMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              ) : null}
               追加
             </Button>
           </DialogFooter>
@@ -473,9 +511,13 @@ export default function Dashboard() {
             </Button>
             <Button
               onClick={handleEditChapter}
+              disabled={updateChapterMutation.isPending}
               className="bg-gradient-to-r from-[#FF8C42] to-[#FFA566] text-white"
               data-testid="button-confirm-edit-chapter"
             >
+              {updateChapterMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              ) : null}
               保存
             </Button>
           </DialogFooter>
@@ -494,9 +536,13 @@ export default function Dashboard() {
             <AlertDialogCancel>キャンセル</AlertDialogCancel>
             <AlertDialogAction
               onClick={handleDeleteChapter}
+              disabled={deleteChapterMutation.isPending}
               className="bg-destructive text-destructive-foreground"
               data-testid="button-confirm-delete-chapter"
             >
+              {deleteChapterMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              ) : null}
               削除
             </AlertDialogAction>
           </AlertDialogFooter>

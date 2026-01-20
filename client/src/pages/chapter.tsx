@@ -1,7 +1,17 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useParams, useLocation } from "wouter";
 import { Plus, Edit, FileText, Loader2 } from "lucide-react";
-import { storage } from "@/lib/storage";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { queryClient } from "@/lib/queryClient";
+import {
+  fetchChapter,
+  fetchProblems,
+  fetchProblemWithBlocks,
+  createProblem,
+  updateProblem,
+  deleteProblem,
+  reorderProblems,
+} from "@/lib/api";
 import type { Chapter, Problem } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -31,54 +41,77 @@ import {
 export default function ChapterPage() {
   const { id } = useParams<{ id: string }>();
   const [, setLocation] = useLocation();
-  const [chapter, setChapter] = useState<Chapter | null>(null);
-  const [problems, setProblems] = useState<Problem[]>([]);
   const [editMode, setEditMode] = useState(false);
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [newProblemTitle, setNewProblemTitle] = useState("");
   const [deleteProblemId, setDeleteProblemId] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (id) {
-      loadData();
-    }
-  }, [id]);
+  const {
+    data: chapter,
+    isLoading: isChapterLoading,
+    isError: isChapterError,
+  } = useQuery<Chapter>({
+    queryKey: ["/api/chapters", id],
+    enabled: !!id,
+  });
 
-  const loadData = () => {
-    if (!id) return;
-    const chapterData = storage.getChapter(id);
-    if (!chapterData) {
-      setLocation("/");
-      return;
-    }
-    setChapter(chapterData);
-    const problemsData = storage.getProblemsByChapter(id);
-    setProblems(problemsData);
-  };
+  const {
+    data: problems = [],
+    isLoading: isProblemsLoading,
+  } = useQuery<Problem[]>({
+    queryKey: ["/api/chapters", id, "problems"],
+    enabled: !!id,
+  });
+
+  const createProblemMutation = useMutation({
+    mutationFn: createProblem,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/chapters", id, "problems"] });
+      setNewProblemTitle("");
+      setShowAddDialog(false);
+    },
+  });
+
+  const updateProblemMutation = useMutation({
+    mutationFn: ({ problemId, data }: { problemId: string; data: Partial<{ title: string }> }) =>
+      updateProblem(problemId, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/chapters", id, "problems"] });
+    },
+  });
+
+  const deleteProblemMutation = useMutation({
+    mutationFn: deleteProblem,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/chapters", id, "problems"] });
+      setDeleteProblemId(null);
+    },
+  });
+
+  const reorderProblemsMutation = useMutation({
+    mutationFn: reorderProblems,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/chapters", id, "problems"] });
+    },
+  });
 
   const handleAddProblem = () => {
     if (!newProblemTitle.trim() || !id) return;
-    storage.createProblem({
+    createProblemMutation.mutate({
       chapterId: id,
       title: newProblemTitle.trim(),
       order: problems.length,
     });
-    setNewProblemTitle("");
-    setShowAddDialog(false);
-    loadData();
   };
 
   const handleDeleteProblem = () => {
     if (deleteProblemId) {
-      storage.deleteProblem(deleteProblemId);
-      setDeleteProblemId(null);
-      loadData();
+      deleteProblemMutation.mutate(deleteProblemId);
     }
   };
 
   const handleRenameProblem = (problemId: string, newTitle: string) => {
-    storage.updateProblem(problemId, { title: newTitle });
-    loadData();
+    updateProblemMutation.mutate({ problemId, data: { title: newTitle } });
   };
 
   const handleMoveProblem = (problemId: string, direction: "up" | "down") => {
@@ -91,15 +124,29 @@ export default function ChapterPage() {
     const newProblems = [...problems];
     [newProblems[index], newProblems[newIndex]] = [newProblems[newIndex], newProblems[index]];
     
-    const updatedProblems = newProblems.map((p, i) => ({ ...p, order: i }));
-    storage.reorderProblems(updatedProblems);
-    loadData();
+    const orderedIds = newProblems.map((p) => p.id);
+    reorderProblemsMutation.mutate(orderedIds);
   };
 
   const getProblemHasExplanation = (problemId: string): boolean => {
-    const problemWithBlocks = storage.getProblemWithBlocks(problemId);
-    return problemWithBlocks?.hasExplanation || false;
+    return false;
   };
+
+  if (isChapterError) {
+    setLocation("/");
+    return null;
+  }
+
+  if (isChapterLoading || isProblemsLoading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="h-12 w-12 animate-spin text-primary mx-auto mb-4" />
+          <p className="text-muted-foreground">読み込み中...</p>
+        </div>
+      </div>
+    );
+  }
 
   if (!chapter) {
     return (
@@ -203,9 +250,13 @@ export default function ChapterPage() {
             </Button>
             <Button
               onClick={handleAddProblem}
+              disabled={createProblemMutation.isPending}
               className="bg-gradient-to-r from-[#FF8C42] to-[#FFA566] text-white"
               data-testid="button-confirm-add-problem"
             >
+              {createProblemMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              ) : null}
               追加
             </Button>
           </DialogFooter>
@@ -224,9 +275,13 @@ export default function ChapterPage() {
             <AlertDialogCancel>キャンセル</AlertDialogCancel>
             <AlertDialogAction
               onClick={handleDeleteProblem}
+              disabled={deleteProblemMutation.isPending}
               className="bg-destructive text-destructive-foreground"
               data-testid="button-confirm-delete-problem"
             >
+              {deleteProblemMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              ) : null}
               削除
             </AlertDialogAction>
           </AlertDialogFooter>

@@ -1,6 +1,9 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { GoogleGenAI } from "@google/genai";
+import { storage } from "./storage";
+import { insertChapterSchema, insertProblemSchema, insertBlockSchema } from "@shared/schema";
+import { registerObjectStorageRoutes } from "./replit_integrations/object_storage";
 
 const ai = new GoogleGenAI({
   apiKey: process.env.GOOGLE_AI_API_KEY,
@@ -10,6 +13,262 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+  // Register object storage routes for file uploads
+  registerObjectStorageRoutes(app);
+
+  // ============================================
+  // Chapter Routes
+  // ============================================
+
+  // Get all chapters with problem counts
+  app.get("/api/chapters", async (req, res) => {
+    try {
+      const chapters = await storage.getChapters();
+      res.json(chapters);
+    } catch (error) {
+      console.error("Error fetching chapters:", error);
+      res.status(500).json({ error: "チャプターの取得に失敗しました" });
+    }
+  });
+
+  // Get all genres
+  app.get("/api/genres", async (req, res) => {
+    try {
+      const genres = await storage.getGenres();
+      res.json(genres);
+    } catch (error) {
+      console.error("Error fetching genres:", error);
+      res.status(500).json({ error: "ジャンルの取得に失敗しました" });
+    }
+  });
+
+  // Get a single chapter
+  app.get("/api/chapters/:id", async (req, res) => {
+    try {
+      const chapter = await storage.getChapter(req.params.id);
+      if (!chapter) {
+        return res.status(404).json({ error: "チャプターが見つかりません" });
+      }
+      res.json(chapter);
+    } catch (error) {
+      console.error("Error fetching chapter:", error);
+      res.status(500).json({ error: "チャプターの取得に失敗しました" });
+    }
+  });
+
+  // Create a new chapter
+  app.post("/api/chapters", async (req, res) => {
+    try {
+      const parsed = insertChapterSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "無効なデータです", details: parsed.error });
+      }
+      const chapter = await storage.createChapter(parsed.data);
+      res.status(201).json(chapter);
+    } catch (error) {
+      console.error("Error creating chapter:", error);
+      res.status(500).json({ error: "チャプターの作成に失敗しました" });
+    }
+  });
+
+  // Update a chapter
+  app.patch("/api/chapters/:id", async (req, res) => {
+    try {
+      const chapter = await storage.updateChapter(req.params.id, req.body);
+      if (!chapter) {
+        return res.status(404).json({ error: "チャプターが見つかりません" });
+      }
+      res.json(chapter);
+    } catch (error) {
+      console.error("Error updating chapter:", error);
+      res.status(500).json({ error: "チャプターの更新に失敗しました" });
+    }
+  });
+
+  // Delete a chapter
+  app.delete("/api/chapters/:id", async (req, res) => {
+    try {
+      await storage.deleteChapter(req.params.id);
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting chapter:", error);
+      res.status(500).json({ error: "チャプターの削除に失敗しました" });
+    }
+  });
+
+  // Reorder chapters
+  app.post("/api/chapters/reorder", async (req, res) => {
+    try {
+      const { orderedIds } = req.body;
+      if (!Array.isArray(orderedIds)) {
+        return res.status(400).json({ error: "orderedIds must be an array" });
+      }
+      await storage.reorderChapters(orderedIds);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error reordering chapters:", error);
+      res.status(500).json({ error: "チャプターの並び替えに失敗しました" });
+    }
+  });
+
+  // ============================================
+  // Problem Routes
+  // ============================================
+
+  // Get problems for a chapter
+  app.get("/api/chapters/:chapterId/problems", async (req, res) => {
+    try {
+      const problems = await storage.getProblems(req.params.chapterId);
+      res.json(problems);
+    } catch (error) {
+      console.error("Error fetching problems:", error);
+      res.status(500).json({ error: "問題の取得に失敗しました" });
+    }
+  });
+
+  // Get a single problem with blocks
+  app.get("/api/problems/:id", async (req, res) => {
+    try {
+      const problem = await storage.getProblemWithBlocks(req.params.id);
+      if (!problem) {
+        return res.status(404).json({ error: "問題が見つかりません" });
+      }
+      res.json(problem);
+    } catch (error) {
+      console.error("Error fetching problem:", error);
+      res.status(500).json({ error: "問題の取得に失敗しました" });
+    }
+  });
+
+  // Create a new problem
+  app.post("/api/problems", async (req, res) => {
+    try {
+      const parsed = insertProblemSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "無効なデータです", details: parsed.error });
+      }
+      const problem = await storage.createProblem(parsed.data);
+      res.status(201).json(problem);
+    } catch (error) {
+      console.error("Error creating problem:", error);
+      res.status(500).json({ error: "問題の作成に失敗しました" });
+    }
+  });
+
+  // Update a problem
+  app.patch("/api/problems/:id", async (req, res) => {
+    try {
+      const problem = await storage.updateProblem(req.params.id, req.body);
+      if (!problem) {
+        return res.status(404).json({ error: "問題が見つかりません" });
+      }
+      res.json(problem);
+    } catch (error) {
+      console.error("Error updating problem:", error);
+      res.status(500).json({ error: "問題の更新に失敗しました" });
+    }
+  });
+
+  // Delete a problem
+  app.delete("/api/problems/:id", async (req, res) => {
+    try {
+      await storage.deleteProblem(req.params.id);
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting problem:", error);
+      res.status(500).json({ error: "問題の削除に失敗しました" });
+    }
+  });
+
+  // Reorder problems
+  app.post("/api/problems/reorder", async (req, res) => {
+    try {
+      const { orderedIds } = req.body;
+      if (!Array.isArray(orderedIds)) {
+        return res.status(400).json({ error: "orderedIds must be an array" });
+      }
+      await storage.reorderProblems(orderedIds);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error reordering problems:", error);
+      res.status(500).json({ error: "問題の並び替えに失敗しました" });
+    }
+  });
+
+  // ============================================
+  // Block Routes
+  // ============================================
+
+  // Get blocks for a problem
+  app.get("/api/problems/:problemId/blocks", async (req, res) => {
+    try {
+      const blocks = await storage.getBlocks(req.params.problemId);
+      res.json(blocks);
+    } catch (error) {
+      console.error("Error fetching blocks:", error);
+      res.status(500).json({ error: "ブロックの取得に失敗しました" });
+    }
+  });
+
+  // Create a new block
+  app.post("/api/blocks", async (req, res) => {
+    try {
+      const parsed = insertBlockSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "無効なデータです", details: parsed.error });
+      }
+      const block = await storage.createBlock(parsed.data);
+      res.status(201).json(block);
+    } catch (error) {
+      console.error("Error creating block:", error);
+      res.status(500).json({ error: "ブロックの作成に失敗しました" });
+    }
+  });
+
+  // Update a block
+  app.patch("/api/blocks/:id", async (req, res) => {
+    try {
+      const block = await storage.updateBlock(req.params.id, req.body);
+      if (!block) {
+        return res.status(404).json({ error: "ブロックが見つかりません" });
+      }
+      res.json(block);
+    } catch (error) {
+      console.error("Error updating block:", error);
+      res.status(500).json({ error: "ブロックの更新に失敗しました" });
+    }
+  });
+
+  // Delete a block
+  app.delete("/api/blocks/:id", async (req, res) => {
+    try {
+      await storage.deleteBlock(req.params.id);
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting block:", error);
+      res.status(500).json({ error: "ブロックの削除に失敗しました" });
+    }
+  });
+
+  // Reorder blocks
+  app.post("/api/blocks/reorder", async (req, res) => {
+    try {
+      const { orderedIds } = req.body;
+      if (!Array.isArray(orderedIds)) {
+        return res.status(400).json({ error: "orderedIds must be an array" });
+      }
+      await storage.reorderBlocks(orderedIds);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error reordering blocks:", error);
+      res.status(500).json({ error: "ブロックの並び替えに失敗しました" });
+    }
+  });
+
+  // ============================================
+  // AI Routes
+  // ============================================
+
   app.post("/api/ai/explain", async (req, res) => {
     try {
       const { problem, code, imageUrl } = req.body;

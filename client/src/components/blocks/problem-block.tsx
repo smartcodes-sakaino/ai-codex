@@ -1,11 +1,12 @@
 import { useState, useRef } from "react";
-import { Trash2, Upload, X, Video, GripVertical, Link, FileVideo } from "lucide-react";
+import { Trash2, Upload, X, Video, GripVertical, Link, FileVideo, Loader2 } from "lucide-react";
 import type { Block, ProblemBlockContent } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { uploadFile } from "@/lib/api";
 
 interface ProblemBlockProps {
   block: Block;
@@ -31,32 +32,50 @@ export function ProblemBlock({
   const content = block.content as ProblemBlockContent;
   const [videoInput, setVideoInput] = useState("");
   const [videoError, setVideoError] = useState("");
+  const [imageError, setImageError] = useState("");
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const [isUploadingVideo, setIsUploadingVideo] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const videoInputRef = useRef<HTMLInputElement>(null);
 
-  const MAX_VIDEO_SIZE = 10 * 1024 * 1024; // 10MB
+  const MAX_VIDEO_SIZE = 50 * 1024 * 1024; // 50MB
+  const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10MB
 
-  const isLocalVideo = (url: string) => url.startsWith("data:video/");
+  const isLocalVideo = (url: string) => url.startsWith("data:video/") || url.startsWith("/objects/");
 
   const handleTextChange = (text: string) => {
     onUpdate({ ...content, text });
   };
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files) return;
 
-    Array.from(files).forEach((file) => {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const base64 = event.target?.result as string;
+    setImageError("");
+    setIsUploadingImage(true);
+
+    try {
+      const uploadedUrls: string[] = [];
+      for (const file of Array.from(files)) {
+        if (file.size > MAX_IMAGE_SIZE) {
+          setImageError(`画像サイズが大きすぎます（${(file.size / 1024 / 1024).toFixed(1)}MB）。10MB以下の画像を選択してください。`);
+          continue;
+        }
+        const url = await uploadFile(file);
+        uploadedUrls.push(url);
+      }
+      if (uploadedUrls.length > 0) {
         onUpdate({
           ...content,
-          images: [...(content.images || []), base64],
+          images: [...(content.images || []), ...uploadedUrls],
         });
-      };
-      reader.readAsDataURL(file);
-    });
+      }
+    } catch (error) {
+      console.error("Image upload error:", error);
+      setImageError("画像のアップロードに失敗しました。");
+    } finally {
+      setIsUploadingImage(false);
+    }
   };
 
   const handleRemoveImage = (index: number) => {
@@ -93,26 +112,27 @@ export function ProblemBlock({
     onUpdate({ ...content, videoUrl: undefined });
   };
 
-  const handleVideoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleVideoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     setVideoError("");
 
     if (file.size > MAX_VIDEO_SIZE) {
-      setVideoError(`動画サイズが大きすぎます（${(file.size / 1024 / 1024).toFixed(1)}MB）。10MB以下の動画を選択してください。`);
+      setVideoError(`動画サイズが大きすぎます（${(file.size / 1024 / 1024).toFixed(1)}MB）。50MB以下の動画を選択してください。`);
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const base64 = event.target?.result as string;
-      onUpdate({ ...content, videoUrl: base64 });
-    };
-    reader.onerror = () => {
-      setVideoError("動画の読み込みに失敗しました。");
-    };
-    reader.readAsDataURL(file);
+    setIsUploadingVideo(true);
+    try {
+      const url = await uploadFile(file);
+      onUpdate({ ...content, videoUrl: url });
+    } catch (error) {
+      console.error("Video upload error:", error);
+      setVideoError("動画のアップロードに失敗しました。");
+    } finally {
+      setIsUploadingVideo(false);
+    }
   };
 
   if (!editMode) {
@@ -219,12 +239,16 @@ export function ProblemBlock({
         <div className="space-y-2">
           <Label>画像</Label>
           <div
-            className="border-2 border-dashed border-muted-foreground/25 rounded-lg p-4 text-center cursor-pointer hover:border-muted-foreground/50 transition-colors"
+            className={`border-2 border-dashed border-muted-foreground/25 rounded-lg p-4 text-center cursor-pointer hover:border-muted-foreground/50 transition-colors ${isUploadingImage ? 'opacity-50 pointer-events-none' : ''}`}
             onClick={() => fileInputRef.current?.click()}
           >
-            <Upload className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
+            {isUploadingImage ? (
+              <Loader2 className="h-8 w-8 mx-auto mb-2 text-muted-foreground animate-spin" />
+            ) : (
+              <Upload className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
+            )}
             <p className="text-sm text-muted-foreground">
-              クリックまたはドラッグ＆ドロップで画像をアップロード
+              {isUploadingImage ? 'アップロード中...' : 'クリックまたはドラッグ＆ドロップで画像をアップロード'}
             </p>
             <input
               ref={fileInputRef}
@@ -236,6 +260,9 @@ export function ProblemBlock({
               data-testid={`input-image-upload-${block.id}`}
             />
           </div>
+          {imageError && (
+            <p className="text-sm text-destructive">{imageError}</p>
+          )}
           {content.images && content.images.length > 0 && (
             <div className="grid grid-cols-3 md:grid-cols-4 gap-2">
               {content.images.map((img, idx) => (
@@ -295,12 +322,16 @@ export function ProblemBlock({
           ) : (
             <div className="space-y-3">
               <div
-                className="border-2 border-dashed border-muted-foreground/25 rounded-lg p-4 text-center cursor-pointer hover:border-muted-foreground/50 transition-colors"
+                className={`border-2 border-dashed border-muted-foreground/25 rounded-lg p-4 text-center cursor-pointer hover:border-muted-foreground/50 transition-colors ${isUploadingVideo ? 'opacity-50 pointer-events-none' : ''}`}
                 onClick={() => videoInputRef.current?.click()}
               >
-                <FileVideo className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
+                {isUploadingVideo ? (
+                  <Loader2 className="h-8 w-8 mx-auto mb-2 text-muted-foreground animate-spin" />
+                ) : (
+                  <FileVideo className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
+                )}
                 <p className="text-sm text-muted-foreground">
-                  クリックして動画をアップロード（10MB以下）
+                  {isUploadingVideo ? 'アップロード中...' : 'クリックして動画をアップロード（50MB以下）'}
                 </p>
                 <input
                   ref={videoInputRef}
