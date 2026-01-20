@@ -9,6 +9,7 @@ import {
   type Block,
   type InsertBlock,
   type ChapterWithCount,
+  type ProblemWithStatus,
   type ProblemWithBlocks,
 } from "@shared/schema";
 import { db } from "./db";
@@ -26,7 +27,7 @@ export interface IStorage {
   getGenres(): Promise<string[]>;
 
   // Problems
-  getProblems(chapterId: string): Promise<Problem[]>;
+  getProblems(chapterId: string): Promise<ProblemWithStatus[]>;
   getProblem(id: string): Promise<Problem | undefined>;
   createProblem(problem: InsertProblem): Promise<Problem>;
   updateProblem(id: string, data: Partial<InsertProblem>): Promise<Problem | undefined>;
@@ -117,12 +118,31 @@ export class DatabaseStorage implements IStorage {
   // Problems
   // ============================================
 
-  async getProblems(chapterId: string): Promise<Problem[]> {
-    return await db
+  async getProblems(chapterId: string): Promise<ProblemWithStatus[]> {
+    const problemList = await db
       .select()
       .from(problems)
       .where(eq(problems.chapterId, chapterId))
       .orderBy(asc(problems.order));
+    
+    const result: ProblemWithStatus[] = [];
+    for (const problem of problemList) {
+      const problemBlocks = await db
+        .select()
+        .from(blocks)
+        .where(eq(blocks.problemId, problem.id));
+      
+      const hasExplanation = problemBlocks.some((block) => {
+        if (block.type === "text") {
+          const content = block.content as { text?: string };
+          return content.text && content.text.trim().length > 0;
+        }
+        return false;
+      });
+      
+      result.push({ ...problem, hasExplanation });
+    }
+    return result;
   }
 
   async getProblem(id: string): Promise<Problem | undefined> {

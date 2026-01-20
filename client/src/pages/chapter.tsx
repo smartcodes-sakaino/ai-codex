@@ -12,7 +12,7 @@ import {
   deleteProblem,
   reorderProblems,
 } from "@/lib/api";
-import type { Chapter, Problem } from "@shared/schema";
+import type { Chapter, ProblemWithStatus } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
@@ -59,7 +59,7 @@ export default function ChapterPage() {
   const {
     data: problems = [],
     isLoading: isProblemsLoading,
-  } = useQuery<Problem[]>({
+  } = useQuery<ProblemWithStatus[]>({
     queryKey: ["/api/chapters", id, "problems"],
     enabled: !!id,
   });
@@ -129,10 +129,7 @@ export default function ChapterPage() {
     reorderProblemsMutation.mutate(orderedIds);
   };
 
-  const getProblemHasExplanation = (problemId: string): boolean => {
-    return false;
-  };
-
+  
   if (isChapterError) {
     setLocation("/");
     return null;
@@ -213,7 +210,7 @@ export default function ChapterPage() {
               <ProblemCard
                 key={problem.id}
                 problem={problem}
-                hasExplanation={getProblemHasExplanation(problem.id)}
+                hasExplanation={problem.hasExplanation}
                 editMode={editMode}
                 onDelete={(id) => setDeleteProblemId(id)}
                 onRename={handleRenameProblem}

@@ -135,6 +135,10 @@ export interface ChapterWithCount extends Chapter {
   problemCount: number;
 }
 
+export interface ProblemWithStatus extends Problem {
+  hasExplanation: boolean;
+}
+
 export interface ProblemWithBlocks extends Problem {
   blocks: Block[];
   hasExplanation: boolean;

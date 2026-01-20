@@ -3,6 +3,7 @@ import type {
   Problem, 
   Block, 
   ChapterWithCount, 
+  ProblemWithStatus,
   ProblemWithBlocks, 
   InsertChapter, 
   InsertProblem, 
@@ -54,7 +55,7 @@ export async function reorderChapters(orderedIds: string[]): Promise<void> {
 // Problem API
 // ============================================
 
-export async function fetchProblems(chapterId: string): Promise<Problem[]> {
+export async function fetchProblems(chapterId: string): Promise<ProblemWithStatus[]> {
   const response = await fetch(`/api/chapters/${chapterId}/problems`);
   if (!response.ok) throw new Error("Failed to fetch problems");
   return response.json();
