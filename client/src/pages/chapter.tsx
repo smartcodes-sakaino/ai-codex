@@ -19,6 +19,7 @@ import { Label } from "@/components/ui/label";
 import { Breadcrumb } from "@/components/breadcrumb";
 import { ProblemCard } from "@/components/problem-card";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { HelpDialog, chapterHelp } from "@/components/help-dialog";
 import {
   Dialog,
   DialogContent,
@@ -177,6 +178,7 @@ export default function ChapterPage() {
                 <span className="hidden sm:inline">編集</span>
               </Label>
             </div>
+            <HelpDialog title={chapterHelp.title} items={chapterHelp.items} />
             <ThemeToggle />
           </div>
         </div>

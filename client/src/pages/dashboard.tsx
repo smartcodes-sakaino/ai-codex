@@ -9,6 +9,7 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { ChapterCard } from "@/components/chapter-card";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { HelpDialog, dashboardHelp } from "@/components/help-dialog";
 import {
   Dialog,
   DialogContent,
@@ -259,6 +260,7 @@ export default function Dashboard() {
                 <span className="hidden sm:inline">編集モード</span>
               </Label>
             </div>
+            <HelpDialog title={dashboardHelp.title} items={dashboardHelp.items} />
             <ThemeToggle />
           </div>
         </div>

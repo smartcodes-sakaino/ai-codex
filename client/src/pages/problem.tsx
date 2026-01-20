@@ -15,6 +15,7 @@ import type { Block, ProblemBlockContent, CodeBlockContent, TextBlockContent } f
 import { Button } from "@/components/ui/button";
 import { Breadcrumb } from "@/components/breadcrumb";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { HelpDialog, problemHelp } from "@/components/help-dialog";
 import { ProblemBlock } from "@/components/blocks/problem-block";
 import { CodeBlock } from "@/components/blocks/code-block";
 import { TextBlock } from "@/components/blocks/text-block";
@@ -181,7 +182,10 @@ export default function ProblemPage() {
               { label: problemData.title },
             ]}
           />
-          <ThemeToggle />
+          <div className="flex items-center gap-1">
+            <HelpDialog title={problemHelp.title} items={problemHelp.items} />
+            <ThemeToggle />
+          </div>
         </div>
       </header>
 
