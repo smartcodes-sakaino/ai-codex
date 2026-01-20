@@ -1,0 +1,82 @@
+Create a web-based programming learning documentation app with the following specifications:
+
+# App Structure
+1. Dashboard (Home Page)
+   - Display chapter cards (e.g., "HTML", "JavaScript", "Python") in a grid layout
+   - Each card shows chapter title and problem count
+   - "Edit Mode" toggle button in the header
+   - In edit mode: show "Add Chapter" button and delete icons on each card
+   - Smooth animations on hover and interactions
+
+2. Chapter Page (Problem List)
+   - Breadcrumb navigation: Dashboard > Chapter Name
+   - Display problems as expandable cards or list items
+   - Each problem shows: title, creation date, status (has explanation or not)
+   - Action buttons: Delete, Rename, Reorder (drag-and-drop or up/down arrows)
+   - "Add New Problem" button at the top
+
+3. Problem Detail Page
+   - Breadcrumb navigation: Dashboard > Chapter > Problem
+   - If no content: show "No explanation yet" with prominent "Edit" button
+   - In edit mode, show "Add Block" dropdown with 3 options:
+     * Problem Block
+     * Code Block  
+     * Text Block
+   - All blocks displayed vertically with reorder controls (drag handles or arrows)
+   - Save/Cancel buttons for edit mode
+
+# Block Types
+## Problem Block
+- Rich text editor for problem description
+- Image upload (drag-and-drop, preview thumbnails)
+- Video embed support (YouTube/Vimeo URL input)
+- Delete button
+
+## Code Block
+- Language selector dropdown (HTML, CSS, JavaScript, Python, Java, C++, etc.)
+- Syntax highlighting using Prism.js or highlight.js
+- Line numbers
+- Copy code button
+- Delete button
+
+## Text Block
+- Rich text editor for explanations
+- "AI Explain" button (only active when a Problem Block exists in the same detail page)
+- When clicked: sends problem text + code (if Code Block exists) to Google AI (Gemini API)
+- AI response auto-populates into the text editor
+- Loading spinner during AI generation
+- Delete button
+
+# Design Requirements
+- Color scheme: Orange (#FF8C42, #FFA566), Pink (#FF6B9D, #FFB3C6), Blue (#4A90E2, #7CB9E8)
+- Bright, cheerful, modern UI with gradients
+- Smooth transitions and micro-animations
+- Card-based layout with subtle shadows
+- Rounded corners (border-radius: 12-16px)
+- Fully responsive (mobile, tablet, desktop)
+
+# Technical Requirements
+- Single Page Application (React or Vue.js preferred)
+- No authentication/login required
+- Store data in localStorage or IndexedDB (persistent storage)
+- Google Gemini API integration for AI explanations
+- API key input field in settings (stored in localStorage)
+- Drag-and-drop functionality for reordering
+- File upload for images (base64 encoding for local storage)
+
+# Key Features
+- CRUD operations for chapters and problems
+- Block-based content editor
+- Syntax highlighting for code
+- AI-powered explanation generation
+- Responsive grid/flexbox layouts
+- Smooth page transitions
+- Undo/Redo for editing (bonus)
+
+# File Structure Suggestion
+- index.html
+- styles.css
+- app.js (or components/ folder for React/Vue)
+- utils.js (API calls, storage helpers)
+
+Please create a fully functional, visually appealing app with clean code and comments. Focus on user experience and smooth interactions.
