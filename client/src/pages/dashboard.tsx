@@ -105,7 +105,8 @@ export default function Dashboard() {
       valid = false;
     }
 
-    const genre = useNewGenre ? newChapterGenreInput.trim() : newChapterGenre;
+    const isNewGenreMode = useNewGenre || existingGenres.length === 0;
+    const genre = isNewGenreMode ? newChapterGenreInput.trim() : newChapterGenre;
     if (!genre) {
       setGenreError("ジャンルは必須です");
       valid = false;
@@ -117,7 +118,8 @@ export default function Dashboard() {
   const handleAddChapter = () => {
     if (!validateAddForm()) return;
     
-    const genre = useNewGenre ? newChapterGenreInput.trim() : newChapterGenre;
+    const isNewGenreMode = useNewGenre || existingGenres.length === 0;
+    const genre = isNewGenreMode ? newChapterGenreInput.trim() : newChapterGenre;
     storage.createChapter({
       title: newChapterTitle.trim(),
       genre: genre,
@@ -177,7 +179,8 @@ export default function Dashboard() {
       valid = false;
     }
 
-    const genre = editUseNewGenre ? editGenreInput.trim() : editGenre;
+    const isNewGenreMode = editUseNewGenre || existingGenres.length === 0;
+    const genre = isNewGenreMode ? editGenreInput.trim() : editGenre;
     if (!genre) {
       setEditGenreError("ジャンルは必須です");
       valid = false;
@@ -189,7 +192,8 @@ export default function Dashboard() {
   const handleEditChapter = () => {
     if (!editChapter || !validateEditForm()) return;
     
-    const genre = editUseNewGenre ? editGenreInput.trim() : editGenre;
+    const isNewGenreMode = editUseNewGenre || existingGenres.length === 0;
+    const genre = isNewGenreMode ? editGenreInput.trim() : editGenre;
     storage.updateChapter(editChapter.id, {
       title: editTitle.trim(),
       genre: genre,
@@ -370,7 +374,7 @@ export default function Dashboard() {
                 </Label>
               </div>
               
-              {useNewGenre ? (
+              {useNewGenre || existingGenres.length === 0 ? (
                 <Input
                   value={newChapterGenreInput}
                   onChange={(e) => setNewChapterGenreInput(e.target.value)}
@@ -383,24 +387,13 @@ export default function Dashboard() {
                     <SelectValue placeholder="ジャンルを選択" />
                   </SelectTrigger>
                   <SelectContent>
-                    {existingGenres.length === 0 ? (
-                      <SelectItem value="" disabled>
-                        既存のジャンルがありません
-                      </SelectItem>
-                    ) : (
-                      existingGenres.map((genre) => (
-                        <SelectItem key={genre} value={genre}>{genre}</SelectItem>
-                      ))
-                    )}
+                    {existingGenres.map((genre) => (
+                      <SelectItem key={genre} value={genre}>{genre}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               )}
               {genreError && <p className="text-sm text-destructive">{genreError}</p>}
-              {!useNewGenre && existingGenres.length === 0 && (
-                <p className="text-sm text-muted-foreground">
-                  既存のジャンルがありません。新しいジャンルを入力してください。
-                </p>
-              )}
             </div>
           </div>
           <DialogFooter>
@@ -452,7 +445,7 @@ export default function Dashboard() {
                 </Label>
               </div>
               
-              {editUseNewGenre ? (
+              {editUseNewGenre || existingGenres.length === 0 ? (
                 <Input
                   value={editGenreInput}
                   onChange={(e) => setEditGenreInput(e.target.value)}
