@@ -1,4 +1,4 @@
-import { Trash2 } from "lucide-react";
+import { Trash2, Pencil } from "lucide-react";
 import { Link } from "wouter";
 import type { ChapterWithCount } from "@shared/schema";
 import { Button } from "@/components/ui/button";
@@ -7,6 +7,7 @@ interface ChapterCardProps {
   chapter: ChapterWithCount;
   editMode: boolean;
   onDelete: (id: string) => void;
+  onEdit: (chapter: ChapterWithCount) => void;
   colorIndex: number;
 }
 
@@ -19,24 +20,7 @@ const gradients = [
   "from-[#E74C3C] to-[#F1948A]",
 ];
 
-const icons: Record<string, string> = {
-  HTML: "code",
-  CSS: "palette",
-  JavaScript: "braces",
-  Python: "terminal",
-  Java: "coffee",
-  "C++": "cpu",
-  React: "atom",
-  TypeScript: "file-type",
-  SQL: "database",
-  Git: "git-branch",
-};
-
-function getIcon(title: string): string {
-  return icons[title] || "book-open";
-}
-
-export function ChapterCard({ chapter, editMode, onDelete, colorIndex }: ChapterCardProps) {
+export function ChapterCard({ chapter, editMode, onDelete, onEdit, colorIndex }: ChapterCardProps) {
   const gradient = gradients[colorIndex % gradients.length];
 
   return (
@@ -45,15 +29,17 @@ export function ChapterCard({ chapter, editMode, onDelete, colorIndex }: Chapter
         <div
           className={`bg-gradient-to-br ${gradient} rounded-2xl p-6 aspect-[4/3] flex flex-col justify-between text-white shadow-md hover:shadow-lg transition-all duration-150 hover:-translate-y-1 cursor-pointer overflow-visible`}
         >
-          <div className="flex items-start justify-between">
-            <div className="text-4xl opacity-90">
-              {chapter.icon || getIcon(chapter.title)}
-            </div>
-          </div>
           <div>
             <h3 className="text-xl font-semibold mb-1 truncate" data-testid={`text-chapter-title-${chapter.id}`}>
               {chapter.title}
             </h3>
+            {chapter.genre && (
+              <p className="text-sm opacity-80 mb-2" data-testid={`text-chapter-genre-${chapter.id}`}>
+                {chapter.genre}
+              </p>
+            )}
+          </div>
+          <div>
             <p className="text-sm opacity-90" data-testid={`text-problem-count-${chapter.id}`}>
               {chapter.problemCount} 問題
             </p>
@@ -61,19 +47,34 @@ export function ChapterCard({ chapter, editMode, onDelete, colorIndex }: Chapter
         </div>
       </Link>
       {editMode && (
-        <Button
-          variant="destructive"
-          size="icon"
-          className="absolute -top-2 -right-2 h-8 w-8 rounded-full shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-10"
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            onDelete(chapter.id);
-          }}
-          data-testid={`button-delete-chapter-${chapter.id}`}
-        >
-          <Trash2 className="h-4 w-4" />
-        </Button>
+        <div className="absolute -top-2 -right-2 flex gap-1 z-10">
+          <Button
+            variant="secondary"
+            size="icon"
+            className="rounded-full shadow-lg opacity-0 group-hover:opacity-100 transition-opacity"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onEdit(chapter);
+            }}
+            data-testid={`button-edit-chapter-${chapter.id}`}
+          >
+            <Pencil className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="destructive"
+            size="icon"
+            className="rounded-full shadow-lg opacity-0 group-hover:opacity-100 transition-opacity"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onDelete(chapter.id);
+            }}
+            data-testid={`button-delete-chapter-${chapter.id}`}
+          >
+            <Trash2 className="h-4 w-4" />
+          </Button>
+        </div>
       )}
     </div>
   );

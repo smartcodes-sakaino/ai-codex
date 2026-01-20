@@ -30,7 +30,11 @@ function saveToStorage<T>(key: string, value: T): void {
 
 export const storage = {
   getChapters(): Chapter[] {
-    return getFromStorage<Chapter[]>(STORAGE_KEYS.chapters, []);
+    const chapters = getFromStorage<Chapter[]>(STORAGE_KEYS.chapters, []);
+    return chapters.map((c) => ({
+      ...c,
+      genre: c.genre || "",
+    }));
   },
 
   getChaptersWithCount(): ChapterWithCount[] {
@@ -38,8 +42,15 @@ export const storage = {
     const problems = this.getProblems();
     return chapters.map((chapter) => ({
       ...chapter,
+      genre: chapter.genre || "",
       problemCount: problems.filter((p) => p.chapterId === chapter.id).length,
     }));
+  },
+
+  getGenres(): string[] {
+    const chapters = this.getChapters();
+    const genres = new Set(chapters.map((c) => c.genre).filter(Boolean));
+    return Array.from(genres).sort();
   },
 
   getChapter(id: string): Chapter | undefined {

@@ -4,6 +4,7 @@ import { z } from "zod";
 export const chapterSchema = z.object({
   id: z.string(),
   title: z.string(),
+  genre: z.string(),
   icon: z.string().optional(),
   order: z.number(),
   createdAt: z.string(),
