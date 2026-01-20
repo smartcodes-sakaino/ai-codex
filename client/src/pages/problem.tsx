@@ -1,0 +1,321 @@
+import { useState, useEffect } from "react";
+import { useParams, useLocation } from "wouter";
+import { Plus, Edit, Save, X, ChevronDown, FileText, Loader2 } from "lucide-react";
+import { storage } from "@/lib/storage";
+import type { Chapter, Problem, Block, ProblemBlockContent, CodeBlockContent, TextBlockContent } from "@shared/schema";
+import { Button } from "@/components/ui/button";
+import { Breadcrumb } from "@/components/breadcrumb";
+import { ThemeToggle } from "@/components/theme-toggle";
+import { ProblemBlock } from "@/components/blocks/problem-block";
+import { CodeBlock } from "@/components/blocks/code-block";
+import { TextBlock } from "@/components/blocks/text-block";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+
+export default function ProblemPage() {
+  const { id } = useParams<{ id: string }>();
+  const [, setLocation] = useLocation();
+  const [problem, setProblem] = useState<Problem | null>(null);
+  const [chapter, setChapter] = useState<Chapter | null>(null);
+  const [blocks, setBlocks] = useState<Block[]>([]);
+  const [editMode, setEditMode] = useState(false);
+  const [deleteBlockId, setDeleteBlockId] = useState<string | null>(null);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+
+  useEffect(() => {
+    if (id) {
+      loadData();
+    }
+  }, [id]);
+
+  const loadData = () => {
+    if (!id) return;
+    const problemWithBlocks = storage.getProblemWithBlocks(id);
+    if (!problemWithBlocks) {
+      setLocation("/");
+      return;
+    }
+    setProblem(problemWithBlocks);
+    setBlocks(problemWithBlocks.blocks);
+
+    const chapterData = storage.getChapter(problemWithBlocks.chapterId);
+    setChapter(chapterData || null);
+  };
+
+  const handleAddBlock = (type: "problem" | "code" | "text") => {
+    if (!id) return;
+
+    let content: ProblemBlockContent | CodeBlockContent | TextBlockContent;
+    if (type === "problem") {
+      content = { text: "", images: [] };
+    } else if (type === "code") {
+      content = { code: "", language: "javascript" };
+    } else {
+      content = { text: "" };
+    }
+
+    const newBlock = storage.createBlock({
+      problemId: id,
+      type,
+      content,
+      order: blocks.length,
+    });
+
+    setBlocks([...blocks, newBlock]);
+    setHasUnsavedChanges(true);
+    if (!editMode) setEditMode(true);
+  };
+
+  const handleUpdateBlock = (blockId: string, content: ProblemBlockContent | CodeBlockContent | TextBlockContent) => {
+    const block = blocks.find((b) => b.id === blockId);
+    if (!block) return;
+
+    storage.updateBlock(blockId, { content });
+    setBlocks(blocks.map((b) => (b.id === blockId ? { ...b, content } : b)));
+    setHasUnsavedChanges(true);
+  };
+
+  const handleDeleteBlock = () => {
+    if (!deleteBlockId) return;
+    storage.deleteBlock(deleteBlockId);
+    const updatedBlocks = blocks.filter((b) => b.id !== deleteBlockId);
+    const reorderedBlocks = updatedBlocks.map((b, i) => ({ ...b, order: i }));
+    storage.reorderBlocks(reorderedBlocks);
+    setBlocks(reorderedBlocks);
+    setDeleteBlockId(null);
+    setHasUnsavedChanges(true);
+  };
+
+  const handleMoveBlock = (blockId: string, direction: "up" | "down") => {
+    const index = blocks.findIndex((b) => b.id === blockId);
+    if (index === -1) return;
+
+    const newIndex = direction === "up" ? index - 1 : index + 1;
+    if (newIndex < 0 || newIndex >= blocks.length) return;
+
+    const newBlocks = [...blocks];
+    [newBlocks[index], newBlocks[newIndex]] = [newBlocks[newIndex], newBlocks[index]];
+
+    const reorderedBlocks = newBlocks.map((b, i) => ({ ...b, order: i }));
+    storage.reorderBlocks(reorderedBlocks);
+    setBlocks(reorderedBlocks);
+    setHasUnsavedChanges(true);
+  };
+
+  const handleSave = () => {
+    setEditMode(false);
+    setHasUnsavedChanges(false);
+  };
+
+  const handleCancel = () => {
+    loadData();
+    setEditMode(false);
+    setHasUnsavedChanges(false);
+  };
+
+  const problemBlocks = blocks.filter((b) => b.type === "problem");
+  const codeBlocks = blocks.filter((b) => b.type === "code");
+
+  if (!problem || !chapter) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="h-12 w-12 animate-spin text-primary mx-auto mb-4" />
+          <p className="text-muted-foreground">読み込み中...</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-background pb-24">
+      <header className="sticky top-0 z-50 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+        <div className="container mx-auto px-4 h-16 flex items-center justify-between gap-4">
+          <Breadcrumb
+            items={[
+              { label: chapter.title, href: `/chapter/${chapter.id}` },
+              { label: problem.title },
+            ]}
+          />
+          <ThemeToggle />
+        </div>
+      </header>
+
+      <main className="container mx-auto px-4 py-8 max-w-4xl">
+        <div className="flex items-center justify-between mb-6 gap-4 flex-wrap">
+          <h1 className="text-2xl font-bold">{problem.title}</h1>
+          {editMode && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  className="bg-gradient-to-r from-[#FF6B9D] to-[#FFB3C6] text-white"
+                  data-testid="button-add-block"
+                >
+                  <Plus className="h-4 w-4 mr-2" />
+                  ブロックを追加
+                  <ChevronDown className="h-4 w-4 ml-2" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent>
+                <DropdownMenuItem onClick={() => handleAddBlock("problem")} data-testid="menu-add-problem-block">
+                  <span className="text-orange-500 mr-2">■</span>
+                  問題ブロック
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleAddBlock("code")} data-testid="menu-add-code-block">
+                  <span className="text-gray-500 mr-2">■</span>
+                  コードブロック
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleAddBlock("text")} data-testid="menu-add-text-block">
+                  <span className="text-blue-500 mr-2">■</span>
+                  テキストブロック
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+        </div>
+
+        {blocks.length === 0 ? (
+          <div className="text-center py-20 bg-muted/50 rounded-2xl">
+            <div className="mb-4 flex justify-center">
+              <FileText className="h-16 w-16 text-muted-foreground" />
+            </div>
+            <h2 className="text-xl font-semibold mb-2">解説がまだありません</h2>
+            <p className="text-muted-foreground mb-6">
+              編集ボタンをクリックしてコンテンツを追加しましょう
+            </p>
+            <Button
+              onClick={() => setEditMode(true)}
+              className="bg-gradient-to-r from-[#FF8C42] to-[#FFA566] text-white"
+              size="lg"
+              data-testid="button-start-editing"
+            >
+              <Edit className="h-4 w-4 mr-2" />
+              編集を開始
+            </Button>
+          </div>
+        ) : (
+          <div className="space-y-6">
+            {blocks.map((block, index) => {
+              if (block.type === "problem") {
+                return (
+                  <ProblemBlock
+                    key={block.id}
+                    block={block}
+                    editMode={editMode}
+                    onUpdate={(content) => handleUpdateBlock(block.id, content)}
+                    onDelete={() => setDeleteBlockId(block.id)}
+                    onMoveUp={() => handleMoveBlock(block.id, "up")}
+                    onMoveDown={() => handleMoveBlock(block.id, "down")}
+                    isFirst={index === 0}
+                    isLast={index === blocks.length - 1}
+                  />
+                );
+              }
+              if (block.type === "code") {
+                return (
+                  <CodeBlock
+                    key={block.id}
+                    block={block}
+                    editMode={editMode}
+                    onUpdate={(content) => handleUpdateBlock(block.id, content)}
+                    onDelete={() => setDeleteBlockId(block.id)}
+                    onMoveUp={() => handleMoveBlock(block.id, "up")}
+                    onMoveDown={() => handleMoveBlock(block.id, "down")}
+                    isFirst={index === 0}
+                    isLast={index === blocks.length - 1}
+                  />
+                );
+              }
+              if (block.type === "text") {
+                return (
+                  <TextBlock
+                    key={block.id}
+                    block={block}
+                    editMode={editMode}
+                    onUpdate={(content) => handleUpdateBlock(block.id, content)}
+                    onDelete={() => setDeleteBlockId(block.id)}
+                    onMoveUp={() => handleMoveBlock(block.id, "up")}
+                    onMoveDown={() => handleMoveBlock(block.id, "down")}
+                    isFirst={index === 0}
+                    isLast={index === blocks.length - 1}
+                    problemBlocks={problemBlocks}
+                    codeBlocks={codeBlocks}
+                  />
+                );
+              }
+              return null;
+            })}
+          </div>
+        )}
+
+        {!editMode && blocks.length > 0 && (
+          <div className="mt-8 text-center">
+            <Button
+              onClick={() => setEditMode(true)}
+              variant="outline"
+              size="lg"
+              data-testid="button-edit-content"
+            >
+              <Edit className="h-4 w-4 mr-2" />
+              コンテンツを編集
+            </Button>
+          </div>
+        )}
+      </main>
+
+      {editMode && (
+        <div className="fixed bottom-0 left-0 right-0 bg-background/95 backdrop-blur border-t p-4 z-50">
+          <div className="container mx-auto max-w-4xl flex justify-end gap-2">
+            <Button variant="outline" onClick={handleCancel} data-testid="button-cancel-edit">
+              <X className="h-4 w-4 mr-2" />
+              キャンセル
+            </Button>
+            <Button
+              onClick={handleSave}
+              className="bg-green-600 text-white hover:bg-green-700"
+              data-testid="button-save-edit"
+            >
+              <Save className="h-4 w-4 mr-2" />
+              保存
+            </Button>
+          </div>
+        </div>
+      )}
+
+      <AlertDialog open={!!deleteBlockId} onOpenChange={() => setDeleteBlockId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>ブロックを削除しますか？</AlertDialogTitle>
+            <AlertDialogDescription>
+              この操作は取り消せません。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>キャンセル</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteBlock}
+              className="bg-destructive text-destructive-foreground"
+              data-testid="button-confirm-delete-block"
+            >
+              削除
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  );
+}
