@@ -1,5 +1,5 @@
 import { useState, useRef } from "react";
-import { Trash2, Upload, X, Video, GripVertical } from "lucide-react";
+import { Trash2, Upload, X, Video, GripVertical, Link, FileVideo } from "lucide-react";
 import type { Block, ProblemBlockContent } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -30,7 +30,13 @@ export function ProblemBlock({
 }: ProblemBlockProps) {
   const content = block.content as ProblemBlockContent;
   const [videoInput, setVideoInput] = useState("");
+  const [videoError, setVideoError] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const videoInputRef = useRef<HTMLInputElement>(null);
+
+  const MAX_VIDEO_SIZE = 10 * 1024 * 1024; // 10MB
+
+  const isLocalVideo = (url: string) => url.startsWith("data:video/");
 
   const handleTextChange = (text: string) => {
     onUpdate({ ...content, text });
@@ -87,6 +93,28 @@ export function ProblemBlock({
     onUpdate({ ...content, videoUrl: undefined });
   };
 
+  const handleVideoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setVideoError("");
+
+    if (file.size > MAX_VIDEO_SIZE) {
+      setVideoError(`動画サイズが大きすぎます（${(file.size / 1024 / 1024).toFixed(1)}MB）。10MB以下の動画を選択してください。`);
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const base64 = event.target?.result as string;
+      onUpdate({ ...content, videoUrl: base64 });
+    };
+    reader.onerror = () => {
+      setVideoError("動画の読み込みに失敗しました。");
+    };
+    reader.readAsDataURL(file);
+  };
+
   if (!editMode) {
     return (
       <Card className="bg-gradient-to-r from-orange-50 to-orange-100 dark:from-orange-950/20 dark:to-orange-900/20 border-orange-200 dark:border-orange-800">
@@ -113,12 +141,21 @@ export function ProblemBlock({
           )}
           {content.videoUrl && (
             <div className="aspect-video rounded-lg overflow-hidden">
-              <iframe
-                src={content.videoUrl}
-                className="w-full h-full"
-                allowFullScreen
-                title="動画"
-              />
+              {isLocalVideo(content.videoUrl) ? (
+                <video
+                  src={content.videoUrl}
+                  className="w-full h-full"
+                  controls
+                  title="動画"
+                />
+              ) : (
+                <iframe
+                  src={content.videoUrl}
+                  className="w-full h-full"
+                  allowFullScreen
+                  title="動画"
+                />
+              )}
             </div>
           )}
         </CardContent>
@@ -224,16 +261,25 @@ export function ProblemBlock({
         </div>
 
         <div className="space-y-2">
-          <Label>動画埋め込み (YouTube/Vimeo URL)</Label>
+          <Label>動画</Label>
           {content.videoUrl ? (
             <div className="space-y-2">
-              <div className="aspect-video rounded-lg overflow-hidden">
-                <iframe
-                  src={content.videoUrl}
-                  className="w-full h-full"
-                  allowFullScreen
-                  title="動画プレビュー"
-                />
+              <div className="aspect-video rounded-lg overflow-hidden bg-black">
+                {isLocalVideo(content.videoUrl) ? (
+                  <video
+                    src={content.videoUrl}
+                    className="w-full h-full"
+                    controls
+                    title="動画プレビュー"
+                  />
+                ) : (
+                  <iframe
+                    src={content.videoUrl}
+                    className="w-full h-full"
+                    allowFullScreen
+                    title="動画プレビュー"
+                  />
+                )}
               </div>
               <Button
                 variant="outline"
@@ -247,17 +293,44 @@ export function ProblemBlock({
               </Button>
             </div>
           ) : (
-            <div className="flex gap-2">
-              <Input
-                value={videoInput}
-                onChange={(e) => setVideoInput(e.target.value)}
-                placeholder="https://youtube.com/watch?v=..."
-                data-testid={`input-video-url-${block.id}`}
-              />
-              <Button onClick={handleAddVideo} variant="outline" data-testid={`button-add-video-${block.id}`}>
-                <Video className="h-4 w-4 mr-1" />
-                追加
-              </Button>
+            <div className="space-y-3">
+              <div
+                className="border-2 border-dashed border-muted-foreground/25 rounded-lg p-4 text-center cursor-pointer hover:border-muted-foreground/50 transition-colors"
+                onClick={() => videoInputRef.current?.click()}
+              >
+                <FileVideo className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
+                <p className="text-sm text-muted-foreground">
+                  クリックして動画をアップロード（10MB以下）
+                </p>
+                <input
+                  ref={videoInputRef}
+                  type="file"
+                  accept="video/*"
+                  onChange={handleVideoUpload}
+                  className="hidden"
+                  data-testid={`input-video-upload-${block.id}`}
+                />
+              </div>
+              {videoError && (
+                <p className="text-sm text-destructive">{videoError}</p>
+              )}
+              <div className="flex items-center gap-2">
+                <div className="flex-1 h-px bg-border" />
+                <span className="text-xs text-muted-foreground">または</span>
+                <div className="flex-1 h-px bg-border" />
+              </div>
+              <div className="flex gap-2">
+                <Input
+                  value={videoInput}
+                  onChange={(e) => setVideoInput(e.target.value)}
+                  placeholder="YouTube/Vimeo URL..."
+                  data-testid={`input-video-url-${block.id}`}
+                />
+                <Button onClick={handleAddVideo} variant="outline" data-testid={`button-add-video-${block.id}`}>
+                  <Link className="h-4 w-4 mr-1" />
+                  URL追加
+                </Button>
+              </div>
             </div>
           )}
         </div>
