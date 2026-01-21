@@ -10,6 +10,91 @@ const ai = new GoogleGenAI({
   apiKey: process.env.GOOGLE_AI_API_KEY,
 });
 
+// Default prompts
+const DEFAULT_EXPLANATION_TEMPLATE = `#命令書:   
+あなたは教育のスペシャリストであり、プロのwebエンジニアです。
+コードが存在している場合、コードは問題に対する模範解答です。この問題、およびコードに対する解説を作成してください。
+
+#制約条件
+- 解答者、担当メンターも初学者と想定して、優しい解説を作成する
+
+#入力文
+- 問題
+{{problem}}
+{{#if imageUrl}}- 問題の画像: {{imageUrl}}{{/if}}
+{{#if code}}- コード全部
+\`\`\`
+{{code}}
+\`\`\`
+{{/if}}
+
+#出力文  
+以下の内容で、md形式で出力してください。
+## コードの解説
+このプロパティは○○のために必要です、使われています、など
+## この課題のポイント
+何回も書くのは冗長なのでまとめられていますね。など工夫点
+## 初心者のよくある間違い
+2重で中央寄せしてしまう、中央寄せを親のpaddingでしてしまうなど、無駄な記述や、ただし使い方ではないパターンなど用意したい
+## この課題の採点基準
+この課題を達成するうえで必達の項目を考えて洗い出してください。模範解答と違くてもOKの判断を出すための項目です。
+凡ミスなどは注意くらいにとどめます。
+## 理解度を図る質問例`;
+
+const DEFAULT_REVIEW_TEMPLATE = `#命令書:   
+あなたは教育のスペシャリストであり、プロのwebエンジニアです。
+問題や解説をもとにコードレビューを行ってください。
+
+#制約条件
+対象は基本的に初学者なので、丁寧な言い回しでフィードバックすること。
+
+#入力文
+・問題データ
+{{problem}}
+{{#if modelCode}}
+・模範解答コード
+\`\`\`
+{{modelCode}}
+\`\`\`
+{{/if}}
+{{#if explanation}}
+・解説文
+{{explanation}}
+{{/if}}
+
+・レビュー対象のコード
+\`\`\`
+{{reviewCode}}
+\`\`\`
+
+#出力文  
+以下の内容で、md形式で出力してください。
+## 総評
+ぱっと見の総評、全体像
+## よくできているところ
+ここまでできてて素晴らしいです、など前向きなフィードバック
+## こうするともっといいところ（あれば）
+リファクタリング的な目線だったり、違う方法の提示だったり、「ここが違う！」というよりもより良いやり方の提示
+## 修正が必要なところ（あれば）
+絶対に直さなければいけないところを列挙。指摘だけで済む場合など、修正点がない場合は無しでOK。`;
+
+// Template processor for Handlebars-like syntax
+function processTemplate(template: string, vars: Record<string, string | undefined>): string {
+  let result = template;
+  
+  // Process conditionals: {{#if varName}}...{{/if}}
+  result = result.replace(/\{\{#if\s+(\w+)\}\}([\s\S]*?)\{\{\/if\}\}/g, (_, varName, content) => {
+    return vars[varName] ? content : "";
+  });
+  
+  // Process variables: {{varName}}
+  result = result.replace(/\{\{(\w+)\}\}/g, (_, varName) => {
+    return vars[varName] || "";
+  });
+  
+  return result;
+}
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express
@@ -278,45 +363,15 @@ export async function registerRoutes(
         return res.status(400).json({ error: "問題文が必要です" });
       }
 
-      let prompt = `#命令書:   
-あなたは教育のスペシャリストであり、プロのwebエンジニアです。
-コードが存在している場合、コードは問題に対する模範解答です。この問題、およびコードに対する解説を作成してください。
+      // Get custom prompt from database or use default
+      const savedPrompt = await storage.getPrompt("explanation");
+      const template = savedPrompt?.template || DEFAULT_EXPLANATION_TEMPLATE;
 
-#制約条件
-- 解答者、担当メンターも初学者と想定して、優しい解説を作成する
-
-#入力文
-- 問題
-${problem}
-`;
-
-      if (imageUrl) {
-        prompt += `- 問題の画像: ${imageUrl}
-`;
-      }
-
-      if (code) {
-        prompt += `- コード全部
-\`\`\`
-${code}
-\`\`\`
-`;
-      }
-
-      prompt += `
-#出力文  
-以下の内容で、md形式で出力してください。
-## コードの解説
-このプロパティは○○のために必要です、使われています、など
-## この課題のポイント
-何回も書くのは冗長なのでまとめられていますね。など工夫点
-## 初心者のよくある間違い
-2重で中央寄せしてしまう、中央寄せを親のpaddingでしてしまうなど、無駄な記述や、ただし使い方ではないパターンなど用意したい
-## この課題の採点基準
-この課題を達成するうえで必達の項目を考えて洗い出してください。模範解答と違くてもOKの判断を出すための項目です。
-凡ミスなどは注意くらいにとどめます。
-## 理解度を図る質問例
-`;
+      const prompt = processTemplate(template, {
+        problem,
+        code,
+        imageUrl,
+      });
 
       const response = await ai.models.generateContent({
         model: "gemini-2.5-flash",
@@ -349,51 +404,16 @@ ${code}
       }
       const { problem, modelCode, explanation, reviewCode } = parseResult.data;
 
-      let prompt = `#命令書:   
-あなたは教育のスペシャリストであり、プロのwebエンジニアです。
-問題や解説をもとにコードレビューを行ってください。
+      // Get custom prompt from database or use default
+      const savedPrompt = await storage.getPrompt("review");
+      const template = savedPrompt?.template || DEFAULT_REVIEW_TEMPLATE;
 
-#制約条件
-対象は基本的に初学者なので、丁寧な言い回しでフィードバックすること。
-
-#入力文
-・問題データ
-${problem}
-`;
-
-      if (modelCode) {
-        prompt += `
-・模範解答コード
-\`\`\`
-${modelCode}
-\`\`\`
-`;
-      }
-
-      if (explanation) {
-        prompt += `
-・解説文
-${explanation}
-`;
-      }
-
-      prompt += `
-・レビュー対象のコード
-\`\`\`
-${reviewCode}
-\`\`\`
-
-#出力文  
-## フィードバック
-### 総合評価(点)
-100点満点で評価してください。
-### よかったところ
-### 改善すべき点
-ない場合は無しでOK
-概念を理解してなさそうな場合、質問形式でも可
-### 修正課題
-絶対に直さなければいけないところを列挙。指摘だけで済む場合など、修正点がない場合は無しでOK。
-`;
+      const prompt = processTemplate(template, {
+        problem,
+        modelCode,
+        explanation,
+        reviewCode,
+      });
 
       const response = await ai.models.generateContent({
         model: "gemini-2.5-flash",

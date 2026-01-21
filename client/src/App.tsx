@@ -7,6 +7,7 @@ import { ThemeProvider } from "@/hooks/use-theme";
 import Dashboard from "@/pages/dashboard";
 import ChapterPage from "@/pages/chapter";
 import ProblemPage from "@/pages/problem";
+import SettingsPage from "@/pages/settings";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -15,6 +16,7 @@ function Router() {
       <Route path="/" component={Dashboard} />
       <Route path="/chapter/:id" component={ChapterPage} />
       <Route path="/problem/:id" component={ProblemPage} />
+      <Route path="/settings" component={SettingsPage} />
       <Route component={NotFound} />
     </Switch>
   );

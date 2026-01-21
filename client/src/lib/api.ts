@@ -2,12 +2,14 @@ import type {
   Chapter, 
   Problem, 
   Block, 
+  Prompt,
   ChapterWithCount, 
   ProblemWithStatus,
   ProblemWithBlocks, 
   InsertChapter, 
   InsertProblem, 
-  InsertBlock 
+  InsertBlock,
+  InsertPrompt
 } from "@shared/schema";
 import { apiRequest } from "./queryClient";
 
@@ -163,4 +165,25 @@ export async function uploadFile(file: File): Promise<string> {
   }
 
   return objectPath;
+}
+
+// ============================================
+// Prompt API
+// ============================================
+
+export async function fetchPrompts(): Promise<Prompt[]> {
+  const response = await fetch("/api/prompts");
+  if (!response.ok) throw new Error("Failed to fetch prompts");
+  return response.json();
+}
+
+export async function fetchPrompt(id: string): Promise<Prompt> {
+  const response = await fetch(`/api/prompts/${id}`);
+  if (!response.ok) throw new Error("Failed to fetch prompt");
+  return response.json();
+}
+
+export async function savePrompt(id: string, data: Omit<InsertPrompt, "id">): Promise<Prompt> {
+  const response = await apiRequest("PUT", `/api/prompts/${id}`, data);
+  return response.json();
 }
