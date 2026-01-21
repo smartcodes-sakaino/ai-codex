@@ -2,12 +2,15 @@ import {
   chapters,
   problems,
   blocks,
+  prompts,
   type Chapter,
   type InsertChapter,
   type Problem,
   type InsertProblem,
   type Block,
   type InsertBlock,
+  type Prompt,
+  type InsertPrompt,
   type ChapterWithCount,
   type ProblemWithStatus,
   type ProblemWithBlocks,
@@ -44,6 +47,11 @@ export interface IStorage {
 
   // Combined
   getProblemWithBlocks(problemId: string): Promise<ProblemWithBlocks | undefined>;
+
+  // Prompts
+  getPrompts(): Promise<Prompt[]>;
+  getPrompt(id: string): Promise<Prompt | undefined>;
+  upsertPrompt(prompt: InsertPrompt): Promise<Prompt>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -239,6 +247,37 @@ export class DatabaseStorage implements IStorage {
       blocks: problemBlocks,
       hasExplanation,
     };
+  }
+
+  // ============================================
+  // Prompts
+  // ============================================
+
+  async getPrompts(): Promise<Prompt[]> {
+    return await db.select().from(prompts);
+  }
+
+  async getPrompt(id: string): Promise<Prompt | undefined> {
+    const [prompt] = await db.select().from(prompts).where(eq(prompts.id, id));
+    return prompt || undefined;
+  }
+
+  async upsertPrompt(prompt: InsertPrompt): Promise<Prompt> {
+    const existing = await this.getPrompt(prompt.id);
+    if (existing) {
+      const [updated] = await db
+        .update(prompts)
+        .set({ ...prompt, updatedAt: new Date() })
+        .where(eq(prompts.id, prompt.id))
+        .returning();
+      return updated;
+    } else {
+      const [created] = await db
+        .insert(prompts)
+        .values(prompt)
+        .returning();
+      return created;
+    }
   }
 }
 

@@ -2,7 +2,7 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { GoogleGenAI } from "@google/genai";
 import { storage } from "./storage";
-import { insertChapterSchema, insertProblemSchema, insertBlockSchema } from "@shared/schema";
+import { insertChapterSchema, insertProblemSchema, insertBlockSchema, insertPromptSchema } from "@shared/schema";
 import { registerObjectStorageRoutes } from "./replit_integrations/object_storage";
 import { z } from "zod";
 
@@ -406,6 +406,53 @@ ${reviewCode}
     } catch (error) {
       console.error("AIレビュー生成エラー:", error);
       res.status(500).json({ error: "AIレビューの生成に失敗しました" });
+    }
+  });
+
+  // ============================================
+  // Prompt Routes
+  // ============================================
+
+  // Get all prompts
+  app.get("/api/prompts", async (req, res) => {
+    try {
+      const promptList = await storage.getPrompts();
+      res.json(promptList);
+    } catch (error) {
+      console.error("Error fetching prompts:", error);
+      res.status(500).json({ error: "プロンプトの取得に失敗しました" });
+    }
+  });
+
+  // Get a single prompt
+  app.get("/api/prompts/:id", async (req, res) => {
+    try {
+      const prompt = await storage.getPrompt(req.params.id);
+      if (!prompt) {
+        return res.status(404).json({ error: "プロンプトが見つかりません" });
+      }
+      res.json(prompt);
+    } catch (error) {
+      console.error("Error fetching prompt:", error);
+      res.status(500).json({ error: "プロンプトの取得に失敗しました" });
+    }
+  });
+
+  // Create or update a prompt
+  app.put("/api/prompts/:id", async (req, res) => {
+    try {
+      const parseResult = insertPromptSchema.safeParse({
+        ...req.body,
+        id: req.params.id,
+      });
+      if (!parseResult.success) {
+        return res.status(400).json({ error: "入力が無効です" });
+      }
+      const prompt = await storage.upsertPrompt(parseResult.data);
+      res.json(prompt);
+    } catch (error) {
+      console.error("Error saving prompt:", error);
+      res.status(500).json({ error: "プロンプトの保存に失敗しました" });
     }
   });
 

@@ -35,6 +35,14 @@ export const blocks = pgTable("blocks", {
   order: integer("order").notNull().default(0),
 });
 
+// AI Prompts table
+export const prompts = pgTable("prompts", {
+  id: text("id").primaryKey(), // "explanation" | "review"
+  name: text("name").notNull(),
+  template: text("template").notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
 // ============================================
 // Relations
 // ============================================
@@ -75,6 +83,10 @@ export const insertProblemSchema = createInsertSchema(problems).omit({
 
 export const insertBlockSchema = createInsertSchema(blocks).omit({ 
   id: true 
+});
+
+export const insertPromptSchema = createInsertSchema(prompts).omit({
+  updatedAt: true
 });
 
 // Block types
@@ -118,6 +130,9 @@ export type InsertProblem = z.infer<typeof insertProblemSchema>;
 
 export type Block = typeof blocks.$inferSelect;
 export type InsertBlock = z.infer<typeof insertBlockSchema>;
+
+export type Prompt = typeof prompts.$inferSelect;
+export type InsertPrompt = z.infer<typeof insertPromptSchema>;
 
 export type ProblemBlockContent = z.infer<typeof problemBlockContentSchema>;
 export type CodeBlockContent = z.infer<typeof codeBlockContentSchema>;
