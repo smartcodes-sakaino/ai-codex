@@ -126,6 +126,16 @@ export async function generateExplanation(data: {
   return response.json();
 }
 
+export async function generateReview(data: {
+  problem: string;
+  modelCode?: string;
+  explanation?: string;
+  reviewCode: string;
+}): Promise<{ review: string }> {
+  const response = await apiRequest("POST", "/api/ai/review", data);
+  return response.json();
+}
+
 // ============================================
 // File Upload API
 // ============================================

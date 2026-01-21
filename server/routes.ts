@@ -4,6 +4,7 @@ import { GoogleGenAI } from "@google/genai";
 import { storage } from "./storage";
 import { insertChapterSchema, insertProblemSchema, insertBlockSchema } from "@shared/schema";
 import { registerObjectStorageRoutes } from "./replit_integrations/object_storage";
+import { z } from "zod";
 
 const ai = new GoogleGenAI({
   apiKey: process.env.GOOGLE_AI_API_KEY,
@@ -328,6 +329,83 @@ ${code}
     } catch (error) {
       console.error("AI説明生成エラー:", error);
       res.status(500).json({ error: "AI解説の生成に失敗しました" });
+    }
+  });
+
+  // AI Code Review
+  const reviewSchema = z.object({
+    problem: z.string().min(1, "問題文が必要です").max(50000, "問題文が長すぎます"),
+    modelCode: z.string().max(100000, "模範解答コードが長すぎます").optional(),
+    explanation: z.string().max(50000, "解説文が長すぎます").optional(),
+    reviewCode: z.string().min(1, "レビュー対象のコードが必要です").max(200000, "レビュー対象のコードが長すぎます"),
+  });
+
+  app.post("/api/ai/review", async (req, res) => {
+    try {
+      const parseResult = reviewSchema.safeParse(req.body);
+      if (!parseResult.success) {
+        const errorMessage = parseResult.error.errors[0]?.message || "入力が無効です";
+        return res.status(400).json({ error: errorMessage });
+      }
+      const { problem, modelCode, explanation, reviewCode } = parseResult.data;
+
+      let prompt = `#命令書:   
+あなたは教育のスペシャリストであり、プロのwebエンジニアです。
+問題や解説をもとにコードレビューを行ってください。
+
+#制約条件
+対象は基本的に初学者なので、丁寧な言い回しでフィードバックすること。
+
+#入力文
+・問題データ
+${problem}
+`;
+
+      if (modelCode) {
+        prompt += `
+・模範解答コード
+\`\`\`
+${modelCode}
+\`\`\`
+`;
+      }
+
+      if (explanation) {
+        prompt += `
+・解説文
+${explanation}
+`;
+      }
+
+      prompt += `
+・レビュー対象のコード
+\`\`\`
+${reviewCode}
+\`\`\`
+
+#出力文  
+## フィードバック
+### 総合評価(点)
+100点満点で評価してください。
+### よかったところ
+### 改善すべき点
+ない場合は無しでOK
+概念を理解してなさそうな場合、質問形式でも可
+### 修正課題
+絶対に直さなければいけないところを列挙。指摘だけで済む場合など、修正点がない場合は無しでOK。
+`;
+
+      const response = await ai.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+      });
+
+      const review = response.text || "レビューを生成できませんでした。";
+
+      res.json({ review });
+    } catch (error) {
+      console.error("AIレビュー生成エラー:", error);
+      res.status(500).json({ error: "AIレビューの生成に失敗しました" });
     }
   });
 

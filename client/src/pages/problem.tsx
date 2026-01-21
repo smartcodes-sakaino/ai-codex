@@ -19,6 +19,7 @@ import { HelpDialog, problemHelp } from "@/components/help-dialog";
 import { ProblemBlock } from "@/components/blocks/problem-block";
 import { CodeBlock } from "@/components/blocks/code-block";
 import { TextBlock } from "@/components/blocks/text-block";
+import { AIReviewDialog } from "@/components/ai-review-dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -155,6 +156,36 @@ export default function ProblemPage() {
 
   const problemBlocks = blocks.filter((b) => b.type === "problem");
   const codeBlocks = blocks.filter((b) => b.type === "code");
+  const textBlocks = blocks.filter((b) => b.type === "text");
+
+  const hasExplanation = textBlocks.some((b) => {
+    const content = b.content as TextBlockContent;
+    return content.text && content.text.trim().length > 0;
+  });
+
+  const getProblemText = (): string => {
+    return problemBlocks
+      .map((b) => (b.content as ProblemBlockContent).text)
+      .filter(Boolean)
+      .join("\n\n");
+  };
+
+  const getModelCode = (): string => {
+    return codeBlocks
+      .map((b) => {
+        const content = b.content as CodeBlockContent;
+        return `// Language: ${content.language}\n${content.code}`;
+      })
+      .filter((code) => code.length > 20)
+      .join("\n\n");
+  };
+
+  const getExplanationText = (): string => {
+    return textBlocks
+      .map((b) => (b.content as TextBlockContent).text)
+      .filter(Boolean)
+      .join("\n\n");
+  };
 
   if (isProblemError) {
     setLocation("/");
@@ -193,6 +224,13 @@ export default function ProblemPage() {
         <div className="flex items-center justify-between mb-6 gap-4 flex-wrap">
           <h1 className="text-2xl font-bold">{problemData.title}</h1>
           <div className="flex items-center gap-2">
+            {hasExplanation && !editMode && (
+              <AIReviewDialog
+                problem={getProblemText()}
+                modelCode={getModelCode()}
+                explanation={getExplanationText()}
+              />
+            )}
             {!editMode && (
               <Button
                 onClick={() => setEditMode(true)}
