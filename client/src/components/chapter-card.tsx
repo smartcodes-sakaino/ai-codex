@@ -32,7 +32,7 @@ export function ChapterCard({ chapter, editMode, onDelete, onEdit, colorIndex }:
           style={chapter.icon ? {
             backgroundImage: `url(${chapter.icon})`,
             backgroundSize: 'cover',
-            backgroundPosition: 'center bottom',
+            backgroundPosition: 'center top',
           } : undefined}
           data-testid={chapter.icon ? `img-chapter-icon-${chapter.id}` : undefined}
         >
