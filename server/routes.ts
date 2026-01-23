@@ -8,16 +8,14 @@ import { z } from "zod";
 import { randomUUID } from "crypto";
 
 const ai = new GoogleGenAI({
-  apiKey: process.env.GOOGLE_AI_API_KEY,
-});
-
-const imageAi = new GoogleGenAI({
   apiKey: process.env.AI_INTEGRATIONS_GEMINI_API_KEY,
   httpOptions: {
     apiVersion: "",
     baseUrl: process.env.AI_INTEGRATIONS_GEMINI_BASE_URL,
   },
 });
+
+const imageAi = ai;
 
 const objectStorageService = new ObjectStorageService();
 
