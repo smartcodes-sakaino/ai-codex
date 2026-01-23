@@ -66,6 +66,7 @@ export class DatabaseStorage implements IStorage {
         title: chapters.title,
         genre: chapters.genre,
         icon: chapters.icon,
+        colorIndex: chapters.colorIndex,
         order: chapters.order,
         createdAt: chapters.createdAt,
         problemCount: sql<number>`cast(count(${problems.id}) as int)`,
