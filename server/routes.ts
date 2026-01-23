@@ -497,7 +497,7 @@ export async function registerRoutes(
       }
       const { title, genre } = parseResult.data;
 
-      const prompt = `Cute simple mascot character with rounded body shape, minimalist design, soft pastel gradient background. The character is a small friendly blob-like humanoid figure with simple dot eyes and tiny arms and legs. The mascot represents "${title}"${genre ? ` in the category of "${genre}"` : ""}. Flat illustration style, kawaii aesthetic, no text, clean vector art style, soft shadows. The character should be doing an activity related to the topic.`;
+      const prompt = `A cute round blob mascot character named "Codey" - a small mint-green colored blob with two simple black dot eyes, tiny pink blush circles on cheeks, small stubby arms and legs. Codey is doing an activity related to "${title}"${genre ? ` (${genre})` : ""}. Consistent character design: same mint-green blob body, same facial features. Only the pose, accessories, and small outfit details change based on the topic. Soft pastel gradient background in peach and lavender tones. Flat vector illustration, kawaii Japanese style, no text or words, clean lines, soft shadows.`;
 
       const response = await ai.models.generateImages({
         model: "imagen-3.0-generate-002",

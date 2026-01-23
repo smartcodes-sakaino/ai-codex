@@ -36,6 +36,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useToast } from "@/hooks/use-toast";
 
 type SortOption = "order" | "name" | "createdAt";
 
@@ -62,6 +63,8 @@ export default function Dashboard() {
   const [isGeneratingIcon, setIsGeneratingIcon] = useState(false);
   const [editIcon, setEditIcon] = useState<string | null>(null);
   const [isGeneratingEditIcon, setIsGeneratingEditIcon] = useState(false);
+
+  const { toast } = useToast();
 
   const { data: chapters = [], isLoading: isLoadingChapters } = useQuery({
     queryKey: ["/api/chapters"],
