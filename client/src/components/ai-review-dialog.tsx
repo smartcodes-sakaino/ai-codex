@@ -1,5 +1,5 @@
 import { useState, useRef } from "react";
-import { FileCode, Upload, Loader2, X, FileArchive, Copy, Check } from "lucide-react";
+import { FileCode, Upload, Loader2, X, FileArchive, Copy, Check, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -11,9 +11,40 @@ import {
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { generateReview } from "@/lib/api";
 import ReactMarkdown from "react-markdown";
+
+const LANGUAGES = [
+  { value: "html", label: "HTML" },
+  { value: "css", label: "CSS" },
+  { value: "javascript", label: "JavaScript" },
+  { value: "typescript", label: "TypeScript" },
+  { value: "python", label: "Python" },
+  { value: "java", label: "Java" },
+  { value: "cpp", label: "C++" },
+  { value: "c", label: "C" },
+  { value: "csharp", label: "C#" },
+  { value: "go", label: "Go" },
+  { value: "rust", label: "Rust" },
+  { value: "ruby", label: "Ruby" },
+  { value: "php", label: "PHP" },
+  { value: "sql", label: "SQL" },
+  { value: "bash", label: "Bash" },
+  { value: "json", label: "JSON" },
+  { value: "yaml", label: "YAML" },
+  { value: "markdown", label: "Markdown" },
+];
+
+interface CodeEntry {
+  id: string;
+  filename: string;
+  language: string;
+  code: string;
+}
 
 interface AIReviewDialogProps {
   problem: string;
@@ -24,19 +55,53 @@ interface AIReviewDialogProps {
 
 export function AIReviewDialog({ problem, modelCode, explanation, disabled }: AIReviewDialogProps) {
   const [open, setOpen] = useState(false);
-  const [codeText, setCodeText] = useState("");
+  const [codeEntries, setCodeEntries] = useState<CodeEntry[]>([
+    { id: crypto.randomUUID(), filename: "", language: "javascript", code: "" }
+  ]);
   const [review, setReview] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleTextSubmit = async () => {
-    if (!codeText.trim()) {
+  const addCodeEntry = () => {
+    setCodeEntries([
+      ...codeEntries,
+      { id: crypto.randomUUID(), filename: "", language: "javascript", code: "" }
+    ]);
+  };
+
+  const removeCodeEntry = (id: string) => {
+    if (codeEntries.length > 1) {
+      setCodeEntries(codeEntries.filter(entry => entry.id !== id));
+    }
+  };
+
+  const updateCodeEntry = (id: string, updates: Partial<CodeEntry>) => {
+    setCodeEntries(codeEntries.map(entry =>
+      entry.id === id ? { ...entry, ...updates } : entry
+    ));
+  };
+
+  const getReviewCode = (): string => {
+    return codeEntries
+      .filter(entry => entry.code.trim())
+      .map(entry => {
+        const header = entry.filename ? `// ===== ${entry.filename} =====` : `// ===== ${LANGUAGES.find(l => l.value === entry.language)?.label || entry.language} =====`;
+        return `${header}\n${entry.code}`;
+      })
+      .join("\n\n");
+  };
+
+  const hasCode = codeEntries.some(entry => entry.code.trim());
+
+  const handleSubmit = async () => {
+    const reviewCode = getReviewCode();
+    if (!reviewCode.trim()) {
       setError("レビュー対象のコードを入力してください");
       return;
     }
-    await submitReview(codeText.trim());
+    await submitReview(reviewCode);
   };
 
   const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
@@ -53,35 +118,74 @@ export function AIReviewDialog({ problem, modelCode, explanation, disabled }: AI
     }
     
     try {
-      let code = "";
-      
       if (file.name.endsWith(".zip")) {
         const JSZip = (await import("jszip")).default;
         const zip = await JSZip.loadAsync(file);
-        const codeFiles: string[] = [];
+        const newEntries: CodeEntry[] = [];
         
         for (const [filename, zipEntry] of Object.entries(zip.files)) {
           if (!zipEntry.dir && isCodeFile(filename)) {
             const content = await zipEntry.async("string");
-            codeFiles.push(`// ===== ${filename} =====\n${content}`);
+            const ext = filename.split(".").pop()?.toLowerCase() || "";
+            const language = getLanguageFromExtension(ext);
+            newEntries.push({
+              id: crypto.randomUUID(),
+              filename: filename.split("/").pop() || filename,
+              language,
+              code: content
+            });
           }
         }
         
-        if (codeFiles.length === 0) {
+        if (newEntries.length === 0) {
           setError("ZIPファイル内にコードファイルが見つかりませんでした");
           return;
         }
         
-        code = codeFiles.join("\n\n");
+        setCodeEntries(newEntries);
       } else {
-        code = await file.text();
+        const content = await file.text();
+        const ext = file.name.split(".").pop()?.toLowerCase() || "";
+        const language = getLanguageFromExtension(ext);
+        setCodeEntries([{
+          id: crypto.randomUUID(),
+          filename: file.name,
+          language,
+          code: content
+        }]);
       }
-      
-      setCodeText(code);
     } catch (err) {
       console.error("File read error:", err);
       setError("ファイルの読み込みに失敗しました");
     }
+    
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
+
+  const getLanguageFromExtension = (ext: string): string => {
+    const extMap: Record<string, string> = {
+      html: "html", htm: "html",
+      css: "css", scss: "css", sass: "css", less: "css",
+      js: "javascript", jsx: "javascript",
+      ts: "typescript", tsx: "typescript",
+      py: "python",
+      java: "java",
+      cpp: "cpp", cc: "cpp", cxx: "cpp",
+      c: "c", h: "c",
+      cs: "csharp",
+      go: "go",
+      rs: "rust",
+      rb: "ruby",
+      php: "php",
+      sql: "sql",
+      sh: "bash", bash: "bash",
+      json: "json",
+      yaml: "yaml", yml: "yaml",
+      md: "markdown",
+    };
+    return extMap[ext] || "javascript";
   };
 
   const isCodeFile = (filename: string): boolean => {
@@ -128,7 +232,7 @@ export function AIReviewDialog({ problem, modelCode, explanation, disabled }: AI
   };
 
   const handleReset = () => {
-    setCodeText("");
+    setCodeEntries([{ id: crypto.randomUUID(), filename: "", language: "javascript", code: "" }]);
     setReview("");
     setError("");
   };
@@ -146,36 +250,97 @@ export function AIReviewDialog({ problem, modelCode, explanation, disabled }: AI
           AIレビュー
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+      <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <FileCode className="h-5 w-5 text-primary" />
             AIコードレビュー
           </DialogTitle>
           <DialogDescription>
-            コードをアップロードして、AIによるフィードバックを受け取ります
+            コードブロックを追加して、AIによるフィードバックを受け取ります
           </DialogDescription>
         </DialogHeader>
 
         {!review ? (
           <div className="space-y-4 mt-4">
-            <Tabs defaultValue="text" className="w-full">
+            <Tabs defaultValue="blocks" className="w-full">
               <TabsList className="grid w-full grid-cols-2">
-                <TabsTrigger value="text" data-testid="tab-text-input">テキスト入力</TabsTrigger>
+                <TabsTrigger value="blocks" data-testid="tab-code-blocks">コードブロック</TabsTrigger>
                 <TabsTrigger value="file" data-testid="tab-file-upload">ファイルアップロード</TabsTrigger>
               </TabsList>
               
-              <TabsContent value="text" className="space-y-4">
-                <div className="space-y-2">
-                  <Label>レビュー対象のコード</Label>
-                  <Textarea
-                    value={codeText}
-                    onChange={(e) => setCodeText(e.target.value)}
-                    placeholder="レビューしたいコードをここに貼り付けてください..."
-                    className="min-h-[200px] font-mono text-sm"
-                    data-testid="textarea-review-code"
-                  />
+              <TabsContent value="blocks" className="space-y-4">
+                <div className="space-y-3">
+                  {codeEntries.map((entry, index) => (
+                    <Card key={entry.id} className="bg-[#1E1E1E] text-gray-100 border-gray-700">
+                      <CardHeader className="py-2 px-4 bg-[#2D2D2D]">
+                        <div className="flex items-center justify-between gap-2 flex-wrap">
+                          <div className="flex items-center gap-2 flex-1 min-w-0">
+                            <span className="text-sm font-medium text-blue-400 whitespace-nowrap">
+                              コード {index + 1}
+                            </span>
+                            <Input
+                              value={entry.filename}
+                              onChange={(e) => updateCodeEntry(entry.id, { filename: e.target.value })}
+                              placeholder="ファイル名（任意）"
+                              className="h-7 text-sm bg-[#2D2D2D] border-gray-600 text-gray-100 max-w-[200px]"
+                              data-testid={`input-filename-${index}`}
+                            />
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Select
+                              value={entry.language}
+                              onValueChange={(lang) => updateCodeEntry(entry.id, { language: lang })}
+                            >
+                              <SelectTrigger
+                                className="w-32 h-7 text-sm bg-[#2D2D2D] border-gray-600 text-gray-100"
+                                data-testid={`select-language-${index}`}
+                              >
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {LANGUAGES.map((lang) => (
+                                  <SelectItem key={lang.value} value={lang.value}>
+                                    {lang.label}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => removeCodeEntry(entry.id)}
+                              disabled={codeEntries.length <= 1}
+                              className="h-7 w-7 text-red-400 hover:text-red-300"
+                              data-testid={`button-remove-code-${index}`}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      </CardHeader>
+                      <CardContent className="p-3">
+                        <Textarea
+                          value={entry.code}
+                          onChange={(e) => updateCodeEntry(entry.id, { code: e.target.value })}
+                          placeholder="レビューしたいコードをここに貼り付けてください..."
+                          className="min-h-[150px] font-mono text-sm bg-[#2D2D2D] border-gray-600 text-gray-100 resize-y"
+                          data-testid={`textarea-code-${index}`}
+                        />
+                      </CardContent>
+                    </Card>
+                  ))}
                 </div>
+                
+                <Button
+                  variant="outline"
+                  onClick={addCodeEntry}
+                  className="w-full gap-2"
+                  data-testid="button-add-code-block"
+                >
+                  <Plus className="h-4 w-4" />
+                  コードブロックを追加
+                </Button>
               </TabsContent>
               
               <TabsContent value="file" className="space-y-4">
@@ -204,33 +369,30 @@ export function AIReviewDialog({ problem, modelCode, explanation, disabled }: AI
                   />
                 </div>
                 
-                {codeText && (
+                {hasCode && (
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
-                      <Label>読み込まれたコード</Label>
+                      <Label>読み込まれたファイル: {codeEntries.length}件</Label>
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => setCodeText("")}
-                        data-testid="button-clear-code"
+                        onClick={handleReset}
+                        data-testid="button-clear-files"
                       >
                         <X className="h-4 w-4 mr-1" />
                         クリア
                       </Button>
                     </div>
-                    <Textarea
-                      value={codeText}
-                      onChange={(e) => setCodeText(e.target.value)}
-                      className="min-h-[150px] font-mono text-sm"
-                      data-testid="textarea-loaded-code"
-                    />
+                    <div className="text-sm text-muted-foreground">
+                      {codeEntries.map(e => e.filename || "無名ファイル").join(", ")}
+                    </div>
                   </div>
                 )}
               </TabsContent>
             </Tabs>
 
             {error && (
-              <p className="text-sm text-destructive">{error}</p>
+              <p className="text-sm text-destructive" data-testid="text-error">{error}</p>
             )}
 
             <div className="flex justify-end gap-2">
@@ -242,8 +404,8 @@ export function AIReviewDialog({ problem, modelCode, explanation, disabled }: AI
                 キャンセル
               </Button>
               <Button
-                onClick={handleTextSubmit}
-                disabled={isLoading || !codeText.trim()}
+                onClick={handleSubmit}
+                disabled={isLoading || !hasCode}
                 className="bg-gradient-to-r from-[#FF8C42] to-[#FFA566] text-white"
                 data-testid="button-submit-review"
               >
