@@ -27,22 +27,22 @@ export function ChapterCard({ chapter, editMode, onDelete, onEdit, colorIndex }:
     <div className="relative group">
       <Link href={`/chapter/${chapter.id}`} data-testid={`card-chapter-${chapter.id}`}>
         <div
-          className={`bg-gradient-to-br ${gradient} rounded-md p-4 aspect-[4/3] flex flex-col text-white shadow-md hover-elevate cursor-pointer overflow-visible`}
+          className={`bg-gradient-to-br ${gradient} rounded-md overflow-hidden flex flex-col text-white shadow-md hover-elevate cursor-pointer`}
         >
           {chapter.icon ? (
-            <div className="flex-1 flex items-center justify-center">
+            <div className="w-full aspect-video">
               <img 
                 src={chapter.icon} 
                 alt={chapter.title} 
-                className="w-full h-full object-contain"
+                className="w-full h-full object-cover"
                 data-testid={`img-chapter-icon-${chapter.id}`}
               />
             </div>
           ) : (
-            <div className="flex-1" />
+            <div className="w-full aspect-video" />
           )}
-          <div>
-            <h3 className="text-lg font-semibold mb-1 truncate" data-testid={`text-chapter-title-${chapter.id}`}>
+          <div className="p-3">
+            <h3 className="text-base font-semibold mb-1 truncate" data-testid={`text-chapter-title-${chapter.id}`}>
               {chapter.title}
             </h3>
             <div className="flex items-center justify-between gap-2 flex-wrap">

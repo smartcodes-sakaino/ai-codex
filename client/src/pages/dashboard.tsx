@@ -167,8 +167,8 @@ export default function Dashboard() {
     } catch (error) {
       console.error("Failed to generate icon:", error);
       toast({
-        title: "アイコン生成エラー",
-        description: "アイコンの生成に失敗しました。もう一度お試しください。",
+        title: "サムネイル生成エラー",
+        description: "サムネイルの生成に失敗しました。もう一度お試しください。",
         variant: "destructive",
       });
     } finally {
@@ -243,8 +243,8 @@ export default function Dashboard() {
     } catch (error) {
       console.error("Failed to generate icon:", error);
       toast({
-        title: "アイコン生成エラー",
-        description: "アイコンの生成に失敗しました。もう一度お試しください。",
+        title: "サムネイル生成エラー",
+        description: "サムネイルの生成に失敗しました。もう一度お試しください。",
         variant: "destructive",
       });
     } finally {
@@ -491,14 +491,14 @@ export default function Dashboard() {
             </div>
 
             <div className="space-y-2">
-              <Label>アイコン</Label>
+              <Label>サムネイル</Label>
               <div className="flex items-center gap-4 flex-wrap">
                 {newChapterIcon ? (
-                  <div className="relative w-20 h-20 rounded-md overflow-hidden border-2 border-dashed border-muted-foreground/30" data-testid="container-icon-preview">
-                    <img src={newChapterIcon} alt="アイコン" className="w-full h-full object-cover" data-testid="img-icon-preview" />
+                  <div className="relative w-32 aspect-video rounded-md overflow-hidden border-2 border-dashed border-muted-foreground/30" data-testid="container-icon-preview">
+                    <img src={newChapterIcon} alt="サムネイル" className="w-full h-full object-cover" data-testid="img-icon-preview" />
                   </div>
                 ) : (
-                  <div className="w-20 h-20 rounded-md border-2 border-dashed border-muted-foreground/30 flex items-center justify-center text-muted-foreground" data-testid="container-icon-placeholder">
+                  <div className="w-32 aspect-video rounded-md border-2 border-dashed border-muted-foreground/30 flex items-center justify-center text-muted-foreground" data-testid="container-icon-placeholder">
                     <Sparkles className="h-6 w-6" />
                   </div>
                 )}
@@ -522,13 +522,13 @@ export default function Dashboard() {
                   ) : (
                     <>
                       <Sparkles className="h-4 w-4 mr-2" />
-                      AIでアイコン生成
+                      AIでサムネイル生成
                     </>
                   )}
                 </Button>
               </div>
               <p className="text-xs text-muted-foreground" data-testid="text-icon-hint">
-                セクション名を入力してからアイコンを生成してください
+                セクション名を入力してからサムネイルを生成してください
               </p>
             </div>
           </div>
@@ -608,14 +608,14 @@ export default function Dashboard() {
             </div>
 
             <div className="space-y-2">
-              <Label>アイコン</Label>
+              <Label>サムネイル</Label>
               <div className="flex items-center gap-4 flex-wrap">
                 {editIcon ? (
-                  <div className="relative w-20 h-20 rounded-md overflow-hidden border-2 border-dashed border-muted-foreground/30" data-testid="container-edit-icon-preview">
-                    <img src={editIcon} alt="アイコン" className="w-full h-full object-cover" data-testid="img-edit-icon-preview" />
+                  <div className="relative w-32 aspect-video rounded-md overflow-hidden border-2 border-dashed border-muted-foreground/30" data-testid="container-edit-icon-preview">
+                    <img src={editIcon} alt="サムネイル" className="w-full h-full object-cover" data-testid="img-edit-icon-preview" />
                   </div>
                 ) : (
-                  <div className="w-20 h-20 rounded-md border-2 border-dashed border-muted-foreground/30 flex items-center justify-center text-muted-foreground" data-testid="container-edit-icon-placeholder">
+                  <div className="w-32 aspect-video rounded-md border-2 border-dashed border-muted-foreground/30 flex items-center justify-center text-muted-foreground" data-testid="container-edit-icon-placeholder">
                     <Sparkles className="h-6 w-6" />
                   </div>
                 )}
@@ -639,7 +639,7 @@ export default function Dashboard() {
                   ) : (
                     <>
                       <Sparkles className="h-4 w-4 mr-2" />
-                      AIでアイコン生成
+                      AIでサムネイル生成
                     </>
                   )}
                 </Button>

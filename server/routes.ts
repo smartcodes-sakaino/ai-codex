@@ -497,14 +497,14 @@ export async function registerRoutes(
     colorIndex: z.number().int().min(0).max(5).optional(),
   });
 
-  // Background colors matching card gradients (from colors in chapter-card.tsx)
-  const gradientBackgrounds = [
-    { from: "#FF8C42", to: "#FFA566", name: "warm orange gradient from #FF8C42 to #FFA566" },
-    { from: "#FF6B9D", to: "#FFB3C6", name: "soft pink gradient from #FF6B9D to #FFB3C6" },
-    { from: "#4A90E2", to: "#7CB9E8", name: "sky blue gradient from #4A90E2 to #7CB9E8" },
-    { from: "#9B59B6", to: "#D4A5D9", name: "lavender purple gradient from #9B59B6 to #D4A5D9" },
-    { from: "#27AE60", to: "#58D68D", name: "fresh green gradient from #27AE60 to #58D68D" },
-    { from: "#E74C3C", to: "#F1948A", name: "coral red gradient from #E74C3C to #F1948A" },
+  // Background colors matching card gradients (using primary color as solid background)
+  const thumbnailBackgrounds = [
+    { color: "#FF8C42", name: "warm orange #FF8C42" },
+    { color: "#FF6B9D", name: "soft pink #FF6B9D" },
+    { color: "#4A90E2", name: "sky blue #4A90E2" },
+    { color: "#9B59B6", name: "lavender purple #9B59B6" },
+    { color: "#27AE60", name: "fresh green #27AE60" },
+    { color: "#E74C3C", name: "coral red #E74C3C" },
   ];
 
   app.post("/api/ai/generate-icon", async (req, res) => {
@@ -516,8 +516,8 @@ export async function registerRoutes(
       }
       const { title, genre, colorIndex } = parseResult.data;
 
-      const bgColor = gradientBackgrounds[(colorIndex ?? 0) % gradientBackgrounds.length];
-      const prompt = `A large cute round blob mascot character named "Codey" filling most of the frame - a white colored blob with two simple black dot eyes, tiny pink blush circles on cheeks, small stubby arms and legs. Codey is doing an activity related to "${title}"${genre ? ` (${genre})` : ""}. Consistent character design: same white blob body, same facial features. Only the pose, accessories, and small outfit details change based on the topic. Background: smooth ${bgColor.name}, diagonal gradient from top-left to bottom-right. The character should be centered and take up 80% of the image. Flat vector illustration, kawaii Japanese style, clean lines, soft shadows, no text no words no letters.`;
+      const bgColor = thumbnailBackgrounds[(colorIndex ?? 0) % thumbnailBackgrounds.length];
+      const prompt = `A cute round blob mascot character named "Codey" - a white colored blob with two simple black dot eyes, tiny pink blush circles on cheeks, small stubby arms and legs. Codey is doing an activity related to "${title}"${genre ? ` (${genre})` : ""}. Consistent character design: same white blob body, same facial features. Only the pose, accessories, and small outfit details change based on the topic. Background: solid flat ${bgColor.name} color, single uniform color fill, no gradients. Wide 16:9 landscape thumbnail format. The character should be centered and take up most of the frame. Flat vector illustration, kawaii Japanese style, clean lines, soft shadows, no text no words no letters.`;
 
       const response = await imageAi.models.generateContent({
         model: "gemini-2.5-flash-image",
