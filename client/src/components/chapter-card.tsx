@@ -30,15 +30,13 @@ export function ChapterCard({ chapter, editMode, onDelete, onEdit, colorIndex }:
           className={`bg-gradient-to-br ${gradient} rounded-md p-4 aspect-[4/3] flex flex-col text-white shadow-md hover-elevate cursor-pointer overflow-visible`}
         >
           {chapter.icon ? (
-            <div className="flex-1 flex items-center justify-center mb-2">
-              <div className="w-24 h-24 rounded-md overflow-hidden bg-white/20 backdrop-blur-sm shadow-inner">
-                <img 
-                  src={chapter.icon} 
-                  alt={chapter.title} 
-                  className="w-full h-full object-cover"
-                  data-testid={`img-chapter-icon-${chapter.id}`}
-                />
-              </div>
+            <div className="flex-1 flex items-center justify-center">
+              <img 
+                src={chapter.icon} 
+                alt={chapter.title} 
+                className="w-full h-full object-contain"
+                data-testid={`img-chapter-icon-${chapter.id}`}
+              />
             </div>
           ) : (
             <div className="flex-1" />

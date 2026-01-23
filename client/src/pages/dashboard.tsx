@@ -160,7 +160,9 @@ export default function Dashboard() {
     try {
       const isNewGenreMode = useNewGenre || existingGenres.length === 0;
       const genre = isNewGenreMode ? newChapterGenreInput.trim() : newChapterGenre;
-      const result = await generateIcon({ title: newChapterTitle.trim(), genre: genre || undefined });
+      // New chapter gets the next colorIndex based on current chapter count
+      const colorIndex = chapters.length % 6;
+      const result = await generateIcon({ title: newChapterTitle.trim(), genre: genre || undefined, colorIndex });
       setNewChapterIcon(result.iconUrl);
     } catch (error) {
       console.error("Failed to generate icon:", error);
@@ -227,13 +229,16 @@ export default function Dashboard() {
   };
 
   const handleGenerateEditIcon = async () => {
-    if (!editTitle.trim()) return;
+    if (!editTitle.trim() || !editChapter) return;
     
     setIsGeneratingEditIcon(true);
     try {
       const isNewGenreMode = editUseNewGenre || existingGenres.length === 0;
       const genre = isNewGenreMode ? editGenreInput.trim() : editGenre;
-      const result = await generateIcon({ title: editTitle.trim(), genre: genre || undefined });
+      // Use the chapter's position in the list for colorIndex
+      const chapterIndex = chapters.findIndex(c => c.id === editChapter.id);
+      const colorIndex = (chapterIndex >= 0 ? chapterIndex : 0) % 6;
+      const result = await generateIcon({ title: editTitle.trim(), genre: genre || undefined, colorIndex });
       setEditIcon(result.iconUrl);
     } catch (error) {
       console.error("Failed to generate icon:", error);

@@ -141,6 +141,7 @@ export async function generateReview(data: {
 export async function generateIcon(data: {
   title: string;
   genre?: string;
+  colorIndex?: number;
 }): Promise<{ iconUrl: string }> {
   const response = await apiRequest("POST", "/api/ai/generate-icon", data);
   return response.json();
