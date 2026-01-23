@@ -4,6 +4,7 @@ import { Plus, Edit, BookOpen, ChevronUp, ChevronDown, Filter, ArrowUpDown, Load
 import { fetchChapters, fetchGenres, createChapter, updateChapter, deleteChapter, reorderChapters, generateIcon } from "@/lib/api";
 import { queryClient } from "@/lib/queryClient";
 import type { ChapterWithCount } from "@shared/schema";
+import mascotGraduate from "@assets/mascot-graduate.png";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
@@ -302,9 +303,17 @@ export default function Dashboard() {
     <div className="min-h-screen bg-background">
       <header className="sticky top-0 z-50 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="container mx-auto px-4 h-16 flex items-center justify-between gap-4">
-          <h1 className="text-xl font-bold bg-gradient-to-r from-[#FF8C42] via-[#FF6B9D] to-[#4A90E2] bg-clip-text text-transparent">
-            AI Codex
-          </h1>
+          <div className="flex items-center gap-2">
+            <img 
+              src={mascotGraduate} 
+              alt="Codey mascot" 
+              className="h-10 w-10 object-contain"
+              data-testid="img-mascot"
+            />
+            <h1 className="text-xl font-bold bg-gradient-to-r from-[#FF8C42] via-[#FF6B9D] to-[#4A90E2] bg-clip-text text-transparent">
+              AI Codex
+            </h1>
+          </div>
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2">
               <Switch
