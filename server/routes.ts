@@ -507,6 +507,78 @@ export async function registerRoutes(
     { color: "#E74C3C", name: "coral red #E74C3C" },
   ];
 
+  // Regenerate all chapter icons (for remix/migration)
+  app.post("/api/ai/regenerate-all-icons", async (req, res) => {
+    try {
+      const chapters = await storage.getChapters();
+      const results: { id: string; title: string; success: boolean; iconUrl?: string; error?: string }[] = [];
+
+      for (const chapter of chapters) {
+        try {
+          const bgColor = thumbnailBackgrounds[(chapter.colorIndex ?? 0) % thumbnailBackgrounds.length];
+          const prompt = `A cute round blob mascot character named "Codey" - a white colored blob with two simple black dot eyes, tiny pink blush circles on cheeks, small stubby arms and legs. Codey is doing an activity related to "${chapter.title}"${chapter.genre ? ` (${chapter.genre})` : ""}. Consistent character design: same white blob body, same facial features. Only the pose, accessories, and small outfit details change based on the topic. IMPORTANT LAYOUT: The character should be positioned in the LOWER HALF of the image, leaving the TOP 30-40% of the image as EMPTY SPACE. The character should be medium-sized (about 50-60% of the image width). Background: solid flat ${bgColor.name} color, single uniform color fill, no gradients, no patterns. Flat vector illustration, kawaii Japanese style, clean lines, soft shadows, no text no words no letters.`;
+
+          const response = await imageAi.models.generateContent({
+            model: "gemini-2.5-flash-image",
+            contents: [{ role: "user", parts: [{ text: prompt }] }],
+            config: {
+              responseModalities: [Modality.TEXT, Modality.IMAGE],
+            },
+          });
+
+          const candidate = response.candidates?.[0];
+          const imagePart = candidate?.content?.parts?.find((part: any) => part.inlineData);
+
+          if (!imagePart?.inlineData?.data) {
+            results.push({ id: chapter.id, title: chapter.title, success: false, error: "No image generated" });
+            continue;
+          }
+
+          const imageBytes = imagePart.inlineData.data;
+
+          // Save to object storage
+          const privateObjectDir = objectStorageService.getPrivateObjectDir();
+          const objectId = randomUUID();
+          const objectPath = `${privateObjectDir}/icons/${objectId}.png`;
+
+          const pathParts = objectPath.split("/").filter(Boolean);
+          const bucketName = pathParts[0];
+          const objectName = pathParts.slice(1).join("/");
+
+          const bucket = objectStorageClient.bucket(bucketName);
+          const file = bucket.file(objectName);
+
+          const buffer = Buffer.from(imageBytes, "base64");
+          await file.save(buffer, {
+            contentType: "image/png",
+            metadata: { contentType: "image/png" },
+          });
+
+          await objectStorageService.trySetObjectEntityAclPolicy(
+            `/objects/icons/${objectId}.png`,
+            { owner: "system", visibility: "public" }
+          );
+
+          const iconUrl = `/objects/icons/${objectId}.png`;
+
+          // Update chapter in database
+          await storage.updateChapter(chapter.id, { icon: iconUrl });
+
+          results.push({ id: chapter.id, title: chapter.title, success: true, iconUrl });
+          console.log(`Regenerated icon for chapter: ${chapter.title}`);
+        } catch (error: any) {
+          console.error(`Failed to regenerate icon for chapter ${chapter.title}:`, error);
+          results.push({ id: chapter.id, title: chapter.title, success: false, error: error.message });
+        }
+      }
+
+      res.json({ results });
+    } catch (error) {
+      console.error("Icon regeneration error:", error);
+      res.status(500).json({ error: "アイコンの再生成に失敗しました" });
+    }
+  });
+
   app.post("/api/ai/generate-icon", async (req, res) => {
     try {
       const parseResult = iconGenerationSchema.safeParse(req.body);
