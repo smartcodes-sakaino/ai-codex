@@ -505,7 +505,7 @@ export async function registerRoutes(
       }
       const { title, genre } = parseResult.data;
 
-      const prompt = `A cute round blob mascot character named "Codey" - a small white colored blob with two simple black dot eyes, tiny pink blush circles on cheeks, small stubby arms and legs. Codey is doing an activity related to "${title}"${genre ? ` (${genre})` : ""}. Consistent character design: same white blob body, same facial features. Only the pose, accessories, and small outfit details change based on the topic. Soft pastel gradient background in peach and orange tones. Flat vector illustration, kawaii Japanese style, clean lines, soft shadows, no text no words no letters.`;
+      const prompt = `A large cute round blob mascot character named "Codey" filling most of the frame - a white colored blob with two simple black dot eyes, tiny pink blush circles on cheeks, small stubby arms and legs. Codey is doing an activity related to "${title}"${genre ? ` (${genre})` : ""}. Consistent character design: same white blob body, same facial features. Only the pose, accessories, and small outfit details change based on the topic. Transparent background, PNG with alpha channel, no background. The character should be centered and take up 80% of the image. Flat vector illustration, kawaii Japanese style, clean lines, soft shadows, no text no words no letters, isolated character on transparent background.`;
 
       const response = await imageAi.models.generateContent({
         model: "gemini-2.5-flash-image",
