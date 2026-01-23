@@ -138,6 +138,14 @@ export async function generateReview(data: {
   return response.json();
 }
 
+export async function generateIcon(data: {
+  title: string;
+  genre?: string;
+}): Promise<{ iconUrl: string }> {
+  const response = await apiRequest("POST", "/api/ai/generate-icon", data);
+  return response.json();
+}
+
 // ============================================
 // File Upload API
 // ============================================

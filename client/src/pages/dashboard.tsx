@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Plus, Edit, BookOpen, ChevronUp, ChevronDown, Filter, ArrowUpDown, Loader2 } from "lucide-react";
-import { fetchChapters, fetchGenres, createChapter, updateChapter, deleteChapter, reorderChapters } from "@/lib/api";
+import { Plus, Edit, BookOpen, ChevronUp, ChevronDown, Filter, ArrowUpDown, Loader2, Sparkles, RefreshCw } from "lucide-react";
+import { fetchChapters, fetchGenres, createChapter, updateChapter, deleteChapter, reorderChapters, generateIcon } from "@/lib/api";
 import { queryClient } from "@/lib/queryClient";
 import type { ChapterWithCount } from "@shared/schema";
 import { Button } from "@/components/ui/button";
@@ -58,6 +58,10 @@ export default function Dashboard() {
   const [genreError, setGenreError] = useState("");
   const [editTitleError, setEditTitleError] = useState("");
   const [editGenreError, setEditGenreError] = useState("");
+  const [newChapterIcon, setNewChapterIcon] = useState<string | null>(null);
+  const [isGeneratingIcon, setIsGeneratingIcon] = useState(false);
+  const [editIcon, setEditIcon] = useState<string | null>(null);
+  const [isGeneratingEditIcon, setIsGeneratingEditIcon] = useState(false);
 
   const { data: chapters = [], isLoading: isLoadingChapters } = useQuery({
     queryKey: ["/api/chapters"],
@@ -146,6 +150,27 @@ export default function Dashboard() {
     return valid;
   };
 
+  const handleGenerateIcon = async () => {
+    if (!newChapterTitle.trim()) return;
+    
+    setIsGeneratingIcon(true);
+    try {
+      const isNewGenreMode = useNewGenre || existingGenres.length === 0;
+      const genre = isNewGenreMode ? newChapterGenreInput.trim() : newChapterGenre;
+      const result = await generateIcon({ title: newChapterTitle.trim(), genre: genre || undefined });
+      setNewChapterIcon(result.iconUrl);
+    } catch (error) {
+      console.error("Failed to generate icon:", error);
+      toast({
+        title: "アイコン生成エラー",
+        description: "アイコンの生成に失敗しました。もう一度お試しください。",
+        variant: "destructive",
+      });
+    } finally {
+      setIsGeneratingIcon(false);
+    }
+  };
+
   const handleAddChapter = () => {
     if (!validateAddForm()) return;
     
@@ -154,11 +179,13 @@ export default function Dashboard() {
     createChapterMutation.mutate({
       title: newChapterTitle.trim(),
       genre: genre,
+      icon: newChapterIcon,
       order: chapters.length,
     });
     setNewChapterTitle("");
     setNewChapterGenre("");
     setNewChapterGenreInput("");
+    setNewChapterIcon(null);
     setUseNewGenre(false);
     setShowAddDialog(false);
   };
@@ -193,6 +220,28 @@ export default function Dashboard() {
     setEditUseNewGenre(false);
     setEditTitleError("");
     setEditGenreError("");
+    setEditIcon(chapter.icon || null);
+  };
+
+  const handleGenerateEditIcon = async () => {
+    if (!editTitle.trim()) return;
+    
+    setIsGeneratingEditIcon(true);
+    try {
+      const isNewGenreMode = editUseNewGenre || existingGenres.length === 0;
+      const genre = isNewGenreMode ? editGenreInput.trim() : editGenre;
+      const result = await generateIcon({ title: editTitle.trim(), genre: genre || undefined });
+      setEditIcon(result.iconUrl);
+    } catch (error) {
+      console.error("Failed to generate icon:", error);
+      toast({
+        title: "アイコン生成エラー",
+        description: "アイコンの生成に失敗しました。もう一度お試しください。",
+        variant: "destructive",
+      });
+    } finally {
+      setIsGeneratingEditIcon(false);
+    }
   };
 
   const validateEditForm = (): boolean => {
@@ -225,6 +274,7 @@ export default function Dashboard() {
       data: {
         title: editTitle.trim(),
         genre: genre,
+        icon: editIcon,
       },
     });
     setEditChapter(null);
@@ -431,6 +481,48 @@ export default function Dashboard() {
               )}
               {genreError && <p className="text-sm text-destructive">{genreError}</p>}
             </div>
+
+            <div className="space-y-2">
+              <Label>アイコン</Label>
+              <div className="flex items-center gap-4 flex-wrap">
+                {newChapterIcon ? (
+                  <div className="relative w-20 h-20 rounded-md overflow-hidden border-2 border-dashed border-muted-foreground/30" data-testid="container-icon-preview">
+                    <img src={newChapterIcon} alt="アイコン" className="w-full h-full object-cover" data-testid="img-icon-preview" />
+                  </div>
+                ) : (
+                  <div className="w-20 h-20 rounded-md border-2 border-dashed border-muted-foreground/30 flex items-center justify-center text-muted-foreground" data-testid="container-icon-placeholder">
+                    <Sparkles className="h-6 w-6" />
+                  </div>
+                )}
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleGenerateIcon}
+                  disabled={isGeneratingIcon || !newChapterTitle.trim()}
+                  data-testid="button-generate-icon"
+                >
+                  {isGeneratingIcon ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                      生成中...
+                    </>
+                  ) : newChapterIcon ? (
+                    <>
+                      <RefreshCw className="h-4 w-4 mr-2" />
+                      再生成
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="h-4 w-4 mr-2" />
+                      AIでアイコン生成
+                    </>
+                  )}
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground" data-testid="text-icon-hint">
+                セクション名を入力してからアイコンを生成してください
+              </p>
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowAddDialog(false)}>
@@ -505,6 +597,45 @@ export default function Dashboard() {
                 </Select>
               )}
               {editGenreError && <p className="text-sm text-destructive">{editGenreError}</p>}
+            </div>
+
+            <div className="space-y-2">
+              <Label>アイコン</Label>
+              <div className="flex items-center gap-4 flex-wrap">
+                {editIcon ? (
+                  <div className="relative w-20 h-20 rounded-md overflow-hidden border-2 border-dashed border-muted-foreground/30" data-testid="container-edit-icon-preview">
+                    <img src={editIcon} alt="アイコン" className="w-full h-full object-cover" data-testid="img-edit-icon-preview" />
+                  </div>
+                ) : (
+                  <div className="w-20 h-20 rounded-md border-2 border-dashed border-muted-foreground/30 flex items-center justify-center text-muted-foreground" data-testid="container-edit-icon-placeholder">
+                    <Sparkles className="h-6 w-6" />
+                  </div>
+                )}
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleGenerateEditIcon}
+                  disabled={isGeneratingEditIcon || !editTitle.trim()}
+                  data-testid="button-generate-edit-icon"
+                >
+                  {isGeneratingEditIcon ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                      生成中...
+                    </>
+                  ) : editIcon ? (
+                    <>
+                      <RefreshCw className="h-4 w-4 mr-2" />
+                      再生成
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="h-4 w-4 mr-2" />
+                      AIでアイコン生成
+                    </>
+                  )}
+                </Button>
+              </div>
             </div>
           </div>
           <DialogFooter>

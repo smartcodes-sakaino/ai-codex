@@ -27,22 +27,36 @@ export function ChapterCard({ chapter, editMode, onDelete, onEdit, colorIndex }:
     <div className="relative group">
       <Link href={`/chapter/${chapter.id}`} data-testid={`card-chapter-${chapter.id}`}>
         <div
-          className={`bg-gradient-to-br ${gradient} rounded-2xl p-6 aspect-[4/3] flex flex-col justify-between text-white shadow-md hover:shadow-lg transition-all duration-150 hover:-translate-y-1 cursor-pointer overflow-visible`}
+          className={`bg-gradient-to-br ${gradient} rounded-md p-4 aspect-[4/3] flex flex-col text-white shadow-md hover-elevate cursor-pointer overflow-visible`}
         >
+          {chapter.icon ? (
+            <div className="flex-1 flex items-center justify-center mb-2">
+              <div className="w-24 h-24 rounded-md overflow-hidden bg-white/20 backdrop-blur-sm shadow-inner">
+                <img 
+                  src={chapter.icon} 
+                  alt={chapter.title} 
+                  className="w-full h-full object-cover"
+                  data-testid={`img-chapter-icon-${chapter.id}`}
+                />
+              </div>
+            </div>
+          ) : (
+            <div className="flex-1" />
+          )}
           <div>
-            <h3 className="text-xl font-semibold mb-1 truncate" data-testid={`text-chapter-title-${chapter.id}`}>
+            <h3 className="text-lg font-semibold mb-1 truncate" data-testid={`text-chapter-title-${chapter.id}`}>
               {chapter.title}
             </h3>
-            {chapter.genre && (
-              <p className="text-sm opacity-80 mb-2" data-testid={`text-chapter-genre-${chapter.id}`}>
-                {chapter.genre}
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              {chapter.genre && (
+                <p className="text-xs opacity-80 truncate" data-testid={`text-chapter-genre-${chapter.id}`}>
+                  {chapter.genre}
+                </p>
+              )}
+              <p className="text-xs opacity-90 whitespace-nowrap" data-testid={`text-problem-count-${chapter.id}`}>
+                {chapter.problemCount} 問題
               </p>
-            )}
-          </div>
-          <div>
-            <p className="text-sm opacity-90" data-testid={`text-problem-count-${chapter.id}`}>
-              {chapter.problemCount} 問題
-            </p>
+            </div>
           </div>
         </div>
       </Link>

@@ -3,12 +3,15 @@ import { createServer, type Server } from "http";
 import { GoogleGenAI } from "@google/genai";
 import { storage } from "./storage";
 import { insertChapterSchema, insertProblemSchema, insertBlockSchema, insertPromptSchema } from "@shared/schema";
-import { registerObjectStorageRoutes } from "./replit_integrations/object_storage";
+import { registerObjectStorageRoutes, ObjectStorageService, objectStorageClient } from "./replit_integrations/object_storage";
 import { z } from "zod";
+import { randomUUID } from "crypto";
 
 const ai = new GoogleGenAI({
   apiKey: process.env.GOOGLE_AI_API_KEY,
 });
+
+const objectStorageService = new ObjectStorageService();
 
 // Default prompts
 const DEFAULT_EXPLANATION_TEMPLATE = `#命令書:   
@@ -473,6 +476,82 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error saving prompt:", error);
       res.status(500).json({ error: "プロンプトの保存に失敗しました" });
+    }
+  });
+
+  // ============================================
+  // AI Icon Generation Route
+  // ============================================
+
+  const iconGenerationSchema = z.object({
+    title: z.string().min(1, "タイトルが必要です").max(200, "タイトルが長すぎます"),
+    genre: z.string().max(100, "ジャンルが長すぎます").optional(),
+  });
+
+  app.post("/api/ai/generate-icon", async (req, res) => {
+    try {
+      const parseResult = iconGenerationSchema.safeParse(req.body);
+      if (!parseResult.success) {
+        const errorMessage = parseResult.error.errors[0]?.message || "入力が無効です";
+        return res.status(400).json({ error: errorMessage });
+      }
+      const { title, genre } = parseResult.data;
+
+      const prompt = `Cute simple mascot character with rounded body shape, minimalist design, soft pastel gradient background. The character is a small friendly blob-like humanoid figure with simple dot eyes and tiny arms and legs. The mascot represents "${title}"${genre ? ` in the category of "${genre}"` : ""}. Flat illustration style, kawaii aesthetic, no text, clean vector art style, soft shadows. The character should be doing an activity related to the topic.`;
+
+      const response = await ai.models.generateImages({
+        model: "imagen-3.0-generate-002",
+        prompt,
+        config: {
+          numberOfImages: 1,
+          aspectRatio: "1:1",
+          negativePrompt: "text, words, letters, watermark, signature, blurry, low quality, realistic, photograph",
+        },
+      });
+
+      if (!response.generatedImages || response.generatedImages.length === 0) {
+        return res.status(500).json({ error: "アイコンの生成に失敗しました" });
+      }
+
+      const imageBytes = response.generatedImages[0].image?.imageBytes;
+      if (!imageBytes) {
+        return res.status(500).json({ error: "アイコンの生成に失敗しました" });
+      }
+
+      // Save to object storage
+      const privateObjectDir = objectStorageService.getPrivateObjectDir();
+      const objectId = randomUUID();
+      const objectPath = `${privateObjectDir}/icons/${objectId}.png`;
+
+      // Parse bucket and object name
+      const pathParts = objectPath.split("/").filter(Boolean);
+      const bucketName = pathParts[0];
+      const objectName = pathParts.slice(1).join("/");
+
+      const bucket = objectStorageClient.bucket(bucketName);
+      const file = bucket.file(objectName);
+
+      // Upload the image
+      const buffer = Buffer.from(imageBytes, "base64");
+      await file.save(buffer, {
+        contentType: "image/png",
+        metadata: {
+          contentType: "image/png",
+        },
+      });
+
+      // Set ACL to public
+      await objectStorageService.trySetObjectEntityAclPolicy(
+        `/objects/icons/${objectId}.png`,
+        { owner: "system", visibility: "public" }
+      );
+
+      const iconUrl = `/objects/icons/${objectId}.png`;
+
+      res.json({ iconUrl });
+    } catch (error) {
+      console.error("AIアイコン生成エラー:", error);
+      res.status(500).json({ error: "AIアイコンの生成に失敗しました" });
     }
   });
 
