@@ -13,6 +13,7 @@ export const chapters = pgTable("chapters", {
   title: text("title").notNull(),
   genre: text("genre").notNull().default(""),
   icon: text("icon"),
+  colorIndex: integer("color_index").notNull().default(0),
   order: integer("order").notNull().default(0),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });

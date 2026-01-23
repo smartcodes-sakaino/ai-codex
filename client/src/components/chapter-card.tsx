@@ -21,37 +21,33 @@ const gradients = [
 ];
 
 export function ChapterCard({ chapter, editMode, onDelete, onEdit, colorIndex }: ChapterCardProps) {
-  const gradient = gradients[colorIndex % gradients.length];
+  const safeColorIndex = typeof colorIndex === 'number' ? colorIndex : 0;
+  const gradient = gradients[safeColorIndex % gradients.length];
 
   return (
     <div className="relative group">
       <Link href={`/chapter/${chapter.id}`} data-testid={`card-chapter-${chapter.id}`}>
         <div
-          className={`bg-gradient-to-br ${gradient} rounded-md overflow-hidden flex flex-col text-white shadow-md hover-elevate cursor-pointer`}
+          className={`bg-gradient-to-br ${gradient} rounded-md overflow-hidden flex flex-col justify-end text-white shadow-md hover-elevate cursor-pointer aspect-[4/3] relative`}
+          style={chapter.icon ? {
+            backgroundImage: `url(${chapter.icon})`,
+            backgroundSize: 'cover',
+            backgroundPosition: 'center bottom',
+          } : undefined}
+          data-testid={chapter.icon ? `img-chapter-icon-${chapter.id}` : undefined}
         >
-          {chapter.icon ? (
-            <div className="w-full aspect-video">
-              <img 
-                src={chapter.icon} 
-                alt={chapter.title} 
-                className="w-full h-full object-cover"
-                data-testid={`img-chapter-icon-${chapter.id}`}
-              />
-            </div>
-          ) : (
-            <div className="w-full aspect-video" />
-          )}
-          <div className="p-3">
-            <h3 className="text-base font-semibold mb-1 truncate" data-testid={`text-chapter-title-${chapter.id}`}>
+          <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
+          <div className="relative p-3">
+            <h3 className="text-base font-semibold mb-1 truncate drop-shadow-md" data-testid={`text-chapter-title-${chapter.id}`}>
               {chapter.title}
             </h3>
             <div className="flex items-center justify-between gap-2 flex-wrap">
               {chapter.genre && (
-                <p className="text-xs opacity-80 truncate" data-testid={`text-chapter-genre-${chapter.id}`}>
+                <p className="text-xs opacity-90 truncate drop-shadow-sm" data-testid={`text-chapter-genre-${chapter.id}`}>
                   {chapter.genre}
                 </p>
               )}
-              <p className="text-xs opacity-90 whitespace-nowrap" data-testid={`text-problem-count-${chapter.id}`}>
+              <p className="text-xs opacity-90 whitespace-nowrap drop-shadow-sm" data-testid={`text-problem-count-${chapter.id}`}>
                 {chapter.problemCount} 問題
               </p>
             </div>

@@ -185,6 +185,7 @@ export default function Dashboard() {
       title: newChapterTitle.trim(),
       genre: genre,
       icon: newChapterIcon,
+      colorIndex: chapters.length % 6,
       order: chapters.length,
     });
     setNewChapterTitle("");
@@ -235,9 +236,8 @@ export default function Dashboard() {
     try {
       const isNewGenreMode = editUseNewGenre || existingGenres.length === 0;
       const genre = isNewGenreMode ? editGenreInput.trim() : editGenre;
-      // Use the chapter's position in the list for colorIndex
-      const chapterIndex = chapters.findIndex(c => c.id === editChapter.id);
-      const colorIndex = (chapterIndex >= 0 ? chapterIndex : 0) % 6;
+      // Use the chapter's stored colorIndex for consistent background color
+      const colorIndex = editChapter.colorIndex ?? 0;
       const result = await generateIcon({ title: editTitle.trim(), genre: genre || undefined, colorIndex });
       setEditIcon(result.iconUrl);
     } catch (error) {
@@ -404,7 +404,7 @@ export default function Dashboard() {
                   editMode={editMode}
                   onDelete={(id) => setDeleteChapterId(id)}
                   onEdit={(c) => openEditDialog(c)}
-                  colorIndex={index}
+                  colorIndex={chapter.colorIndex}
                 />
                 {editMode && sortBy === "order" && (
                   <div className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-10 flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
