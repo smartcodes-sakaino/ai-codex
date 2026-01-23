@@ -64,6 +64,7 @@ export default function ProblemPage() {
   });
 
   const blocks = localBlocks ?? problemData?.blocks ?? [];
+  const [pendingUpdates, setPendingUpdates] = useState<Map<string, ProblemBlockContent | CodeBlockContent | TextBlockContent>>(new Map());
 
   const createBlockMutation = useMutation({
     mutationFn: createBlock,
@@ -75,9 +76,6 @@ export default function ProblemPage() {
   const updateBlockMutation = useMutation({
     mutationFn: ({ id, data }: { id: string; data: Partial<{ content: ProblemBlockContent | CodeBlockContent | TextBlockContent }> }) =>
       updateBlock(id, data),
-    onSuccess: (updatedBlock) => {
-      setLocalBlocks(blocks.map((b) => (b.id === updatedBlock.id ? updatedBlock : b)));
-    },
   });
 
   const deleteBlockMutation = useMutation({
@@ -119,7 +117,12 @@ export default function ProblemPage() {
   };
 
   const handleUpdateBlock = (blockId: string, content: ProblemBlockContent | CodeBlockContent | TextBlockContent) => {
-    updateBlockMutation.mutate({ id: blockId, data: { content } });
+    // Update local state only (no API call) to preserve cursor position
+    setLocalBlocks(
+      blocks.map((b) => (b.id === blockId ? { ...b, content } : b))
+    );
+    // Track pending updates for save
+    setPendingUpdates((prev) => new Map(prev).set(blockId, content));
   };
 
   const handleDeleteBlock = () => {
@@ -144,12 +147,25 @@ export default function ProblemPage() {
   };
 
   const handleSave = async () => {
+    // Save all pending updates to API
+    const savePromises = Array.from(pendingUpdates.entries()).map(([blockId, content]) =>
+      updateBlockMutation.mutateAsync({ id: blockId, data: { content } })
+    );
+    
+    try {
+      await Promise.all(savePromises);
+    } catch (error) {
+      console.error("Failed to save some blocks:", error);
+    }
+    
+    setPendingUpdates(new Map());
     await queryClient.invalidateQueries({ queryKey: ["/api/problems", id] });
     setLocalBlocks(null);
     setEditMode(false);
   };
 
   const handleCancel = () => {
+    setPendingUpdates(new Map());
     setLocalBlocks(null);
     setEditMode(false);
   };
