@@ -1,6 +1,6 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, Modality } from "@google/genai";
 import { storage } from "./storage";
 import { insertChapterSchema, insertProblemSchema, insertBlockSchema, insertPromptSchema } from "@shared/schema";
 import { registerObjectStorageRoutes, ObjectStorageService, objectStorageClient } from "./replit_integrations/object_storage";
@@ -9,6 +9,14 @@ import { randomUUID } from "crypto";
 
 const ai = new GoogleGenAI({
   apiKey: process.env.GOOGLE_AI_API_KEY,
+});
+
+const imageAi = new GoogleGenAI({
+  apiKey: process.env.AI_INTEGRATIONS_GEMINI_API_KEY,
+  httpOptions: {
+    apiVersion: "",
+    baseUrl: process.env.AI_INTEGRATIONS_GEMINI_BASE_URL,
+  },
 });
 
 const objectStorageService = new ObjectStorageService();
@@ -497,26 +505,24 @@ export async function registerRoutes(
       }
       const { title, genre } = parseResult.data;
 
-      const prompt = `A cute round blob mascot character named "Codey" - a small mint-green colored blob with two simple black dot eyes, tiny pink blush circles on cheeks, small stubby arms and legs. Codey is doing an activity related to "${title}"${genre ? ` (${genre})` : ""}. Consistent character design: same mint-green blob body, same facial features. Only the pose, accessories, and small outfit details change based on the topic. Soft pastel gradient background in peach and lavender tones. Flat vector illustration, kawaii Japanese style, no text or words, clean lines, soft shadows.`;
+      const prompt = `A cute round blob mascot character named "Codey" - a small white colored blob with two simple black dot eyes, tiny pink blush circles on cheeks, small stubby arms and legs. Codey is doing an activity related to "${title}"${genre ? ` (${genre})` : ""}. Consistent character design: same white blob body, same facial features. Only the pose, accessories, and small outfit details change based on the topic. Soft pastel gradient background in peach and orange tones. Flat vector illustration, kawaii Japanese style, clean lines, soft shadows, no text no words no letters.`;
 
-      const response = await ai.models.generateImages({
-        model: "imagen-3.0-generate-002",
-        prompt,
+      const response = await imageAi.models.generateContent({
+        model: "gemini-2.5-flash-image",
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
         config: {
-          numberOfImages: 1,
-          aspectRatio: "1:1",
-          negativePrompt: "text, words, letters, watermark, signature, blurry, low quality, realistic, photograph",
+          responseModalities: [Modality.TEXT, Modality.IMAGE],
         },
       });
 
-      if (!response.generatedImages || response.generatedImages.length === 0) {
+      const candidate = response.candidates?.[0];
+      const imagePart = candidate?.content?.parts?.find((part: any) => part.inlineData);
+
+      if (!imagePart?.inlineData?.data) {
         return res.status(500).json({ error: "アイコンの生成に失敗しました" });
       }
 
-      const imageBytes = response.generatedImages[0].image?.imageBytes;
-      if (!imageBytes) {
-        return res.status(500).json({ error: "アイコンの生成に失敗しました" });
-      }
+      const imageBytes = imagePart.inlineData.data;
 
       // Save to object storage
       const privateObjectDir = objectStorageService.getPrivateObjectDir();
