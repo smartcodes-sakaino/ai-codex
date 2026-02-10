@@ -196,3 +196,34 @@ export async function savePrompt(id: string, data: Omit<InsertPrompt, "id">): Pr
   const response = await apiRequest("PUT", `/api/prompts/${id}`, data);
   return response.json();
 }
+
+// ============================================
+// Self Review Links API
+// ============================================
+
+export async function createSelfReviewLink(problemId: string): Promise<{ id: string; problemId: string; token: string }> {
+  const response = await apiRequest("POST", "/api/self-review-links", { problemId });
+  return response.json();
+}
+
+export async function getSelfReviewLinkByProblemId(problemId: string): Promise<{ id: string; problemId: string; token: string } | null> {
+  try {
+    const response = await fetch(`/api/self-review-links/problem/${problemId}`);
+    if (response.status === 404) return null;
+    if (!response.ok) throw new Error("Failed to fetch self-review link");
+    return response.json();
+  } catch {
+    return null;
+  }
+}
+
+export async function getSelfReviewInfo(token: string): Promise<{ problemTitle: string; chapterTitle: string }> {
+  const response = await fetch(`/api/self-review/${token}`);
+  if (!response.ok) throw new Error("Failed to fetch self-review info");
+  return response.json();
+}
+
+export async function submitSelfReview(data: { token: string; reviewCode: string }): Promise<{ review: string }> {
+  const response = await apiRequest("POST", "/api/ai/self-review", data);
+  return response.json();
+}

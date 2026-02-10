@@ -3,6 +3,7 @@ import {
   problems,
   blocks,
   prompts,
+  selfReviewLinks,
   type Chapter,
   type InsertChapter,
   type Problem,
@@ -11,6 +12,8 @@ import {
   type InsertBlock,
   type Prompt,
   type InsertPrompt,
+  type SelfReviewLink,
+  type InsertSelfReviewLink,
   type ChapterWithCount,
   type ProblemWithStatus,
   type ProblemWithBlocks,
@@ -52,6 +55,11 @@ export interface IStorage {
   getPrompts(): Promise<Prompt[]>;
   getPrompt(id: string): Promise<Prompt | undefined>;
   upsertPrompt(prompt: InsertPrompt): Promise<Prompt>;
+
+  // Self Review Links
+  getSelfReviewLinkByProblemId(problemId: string): Promise<SelfReviewLink | undefined>;
+  getSelfReviewLinkByToken(token: string): Promise<SelfReviewLink | undefined>;
+  createSelfReviewLink(data: InsertSelfReviewLink): Promise<SelfReviewLink>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -279,6 +287,29 @@ export class DatabaseStorage implements IStorage {
         .returning();
       return created;
     }
+  }
+
+  // ============================================
+  // Self Review Links
+  // ============================================
+
+  async getSelfReviewLinkByProblemId(problemId: string): Promise<SelfReviewLink | undefined> {
+    const [link] = await db.select().from(selfReviewLinks).where(eq(selfReviewLinks.problemId, problemId));
+    return link || undefined;
+  }
+
+  async getSelfReviewLinkByToken(token: string): Promise<SelfReviewLink | undefined> {
+    const [link] = await db.select().from(selfReviewLinks).where(eq(selfReviewLinks.token, token));
+    return link || undefined;
+  }
+
+  async createSelfReviewLink(data: InsertSelfReviewLink): Promise<SelfReviewLink> {
+    const id = randomUUID();
+    const [created] = await db
+      .insert(selfReviewLinks)
+      .values({ ...data, id })
+      .returning();
+    return created;
   }
 }
 

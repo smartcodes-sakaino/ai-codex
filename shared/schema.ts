@@ -38,10 +38,18 @@ export const blocks = pgTable("blocks", {
 
 // AI Prompts table
 export const prompts = pgTable("prompts", {
-  id: text("id").primaryKey(), // "explanation" | "review"
+  id: text("id").primaryKey(), // "explanation" | "review" | "self_review"
   name: text("name").notNull(),
   template: text("template").notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Self Review Links table
+export const selfReviewLinks = pgTable("self_review_links", {
+  id: text("id").primaryKey(),
+  problemId: text("problem_id").notNull().references(() => problems.id, { onDelete: "cascade" }),
+  token: text("token").notNull().unique(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
 // ============================================
@@ -67,6 +75,13 @@ export const blocksRelations = relations(blocks, ({ one }) => ({
   }),
 }));
 
+export const selfReviewLinksRelations = relations(selfReviewLinks, ({ one }) => ({
+  problem: one(problems, {
+    fields: [selfReviewLinks.problemId],
+    references: [problems.id],
+  }),
+}));
+
 // ============================================
 // Zod Schemas and Types
 // ============================================
@@ -88,6 +103,11 @@ export const insertBlockSchema = createInsertSchema(blocks).omit({
 
 export const insertPromptSchema = createInsertSchema(prompts).omit({
   updatedAt: true
+});
+
+export const insertSelfReviewLinkSchema = createInsertSchema(selfReviewLinks).omit({
+  id: true,
+  createdAt: true
 });
 
 // Block types
@@ -134,6 +154,9 @@ export type InsertBlock = z.infer<typeof insertBlockSchema>;
 
 export type Prompt = typeof prompts.$inferSelect;
 export type InsertPrompt = z.infer<typeof insertPromptSchema>;
+
+export type SelfReviewLink = typeof selfReviewLinks.$inferSelect;
+export type InsertSelfReviewLink = z.infer<typeof insertSelfReviewLinkSchema>;
 
 export type ProblemBlockContent = z.infer<typeof problemBlockContentSchema>;
 export type CodeBlockContent = z.infer<typeof codeBlockContentSchema>;

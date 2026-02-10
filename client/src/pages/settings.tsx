@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Save, Loader2, RotateCcw, FileText, Code } from "lucide-react";
+import { Save, Loader2, RotateCcw, FileText, Code, UserCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
@@ -79,12 +79,59 @@ const DEFAULT_REVIEW_PROMPT = `#命令書:
 ## 修正が必要なところ（あれば）
 絶対に直さなければいけないところを列挙。指摘だけで済む場合など、修正点がない場合は無しでOK。`;
 
+const DEFAULT_SELF_REVIEW_PROMPT = `#命令書:
+あなたは教育のスペシャリストであり、プロのwebエンジニアです。
+研修生が提出したコードを、問題文・模範解答コード・解説文をもとにセルフレビューとしてフィードバックしてください。
+
+#制約条件
+- 対象は初学者の研修生です。丁寧でわかりやすい言い回しを使ってください。
+- 提出コードに修正の必要がない場合は、「総評」のみを出力し、確認テストの受講を促してください。
+- 提出コードに修正が必要な場合は、「総評」「良かった点」「改善点」「修正点」の4項目すべてを出力してください。
+
+#入力文
+・問題データ
+{{problem}}
+{{#if modelCode}}
+・模範解答コード
+\\\`\\\`\\\`
+{{modelCode}}
+\\\`\\\`\\\`
+{{/if}}
+{{#if explanation}}
+・解説文
+{{explanation}}
+{{/if}}
+
+・研修生の提出コード
+\\\`\\\`\\\`
+{{reviewCode}}
+\\\`\\\`\\\`
+
+#出力文
+以下の内容で、md形式で出力してください。
+
+修正が不要な場合（提出コードが十分に正しい場合）:
+## 総評
+提出コードの全体的な評価を記載。「素晴らしい出来です！」等の前向きなコメントと共に、確認テストへ進むよう促してください。
+
+修正が必要な場合:
+## 総評
+提出コードの全体的な評価を記載。
+## 良かった点
+研修生の提出コードの中で良かった部分を具体的に挙げてください。
+## 改善点
+より良くするための改善案やリファクタリングの提案。
+## 修正点
+絶対に修正しなければならない箇所を具体的に列挙してください。`;
+
 export default function SettingsPage() {
   const { toast } = useToast();
   const [explanationName, setExplanationName] = useState("解説作成用プロンプト");
   const [explanationTemplate, setExplanationTemplate] = useState(DEFAULT_EXPLANATION_PROMPT);
   const [reviewName, setReviewName] = useState("AIレビュー用プロンプト");
   const [reviewTemplate, setReviewTemplate] = useState(DEFAULT_REVIEW_PROMPT);
+  const [selfReviewName, setSelfReviewName] = useState("セルフレビュー用プロンプト");
+  const [selfReviewTemplate, setSelfReviewTemplate] = useState(DEFAULT_SELF_REVIEW_PROMPT);
 
   const { data: prompts, isLoading } = useQuery<Prompt[]>({
     queryKey: ["/api/prompts"],
@@ -102,6 +149,11 @@ export default function SettingsPage() {
       if (reviewPrompt) {
         setReviewName(reviewPrompt.name);
         setReviewTemplate(reviewPrompt.template);
+      }
+      const selfReviewPrompt = prompts.find(p => p.id === "self_review");
+      if (selfReviewPrompt) {
+        setSelfReviewName(selfReviewPrompt.name);
+        setSelfReviewTemplate(selfReviewPrompt.template);
       }
     }
   }, [prompts]);
@@ -138,6 +190,22 @@ export default function SettingsPage() {
     setReviewTemplate(DEFAULT_REVIEW_PROMPT);
   };
 
+  const saveSelfReviewMutation = useMutation({
+    mutationFn: () => savePrompt("self_review", { name: selfReviewName, template: selfReviewTemplate }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/prompts"] });
+      toast({ title: "保存しました", description: "セルフレビュー用プロンプトを保存しました" });
+    },
+    onError: () => {
+      toast({ title: "エラー", description: "保存に失敗しました", variant: "destructive" });
+    },
+  });
+
+  const resetSelfReview = () => {
+    setSelfReviewName("セルフレビュー用プロンプト");
+    setSelfReviewTemplate(DEFAULT_SELF_REVIEW_PROMPT);
+  };
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -168,7 +236,7 @@ export default function SettingsPage() {
       </div>
 
       <Tabs defaultValue="explanation" className="w-full">
-        <TabsList className="grid w-full grid-cols-2 mb-6">
+        <TabsList className="grid w-full grid-cols-3 mb-6">
           <TabsTrigger value="explanation" data-testid="tab-explanation-prompt">
             <FileText className="h-4 w-4 mr-2" />
             解説作成用
@@ -176,6 +244,10 @@ export default function SettingsPage() {
           <TabsTrigger value="review" data-testid="tab-review-prompt">
             <Code className="h-4 w-4 mr-2" />
             AIレビュー用
+          </TabsTrigger>
+          <TabsTrigger value="self_review" data-testid="tab-self-review-prompt">
+            <UserCheck className="h-4 w-4 mr-2" />
+            セルフレビュー用
           </TabsTrigger>
         </TabsList>
 
@@ -278,6 +350,61 @@ export default function SettingsPage() {
                   data-testid="button-save-review"
                 >
                   {saveReviewMutation.isPending ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <Save className="h-4 w-4 mr-2" />
+                  )}
+                  保存
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="self_review">
+          <Card>
+            <CardHeader>
+              <CardTitle>セルフレビュー用プロンプト</CardTitle>
+              <CardDescription>
+                研修生のセルフレビューで使用するプロンプトです
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="self-review-name">プロンプト名</Label>
+                <Input
+                  id="self-review-name"
+                  value={selfReviewName}
+                  onChange={(e) => setSelfReviewName(e.target.value)}
+                  data-testid="input-self-review-name"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="self-review-template">プロンプトテンプレート</Label>
+                <Textarea
+                  id="self-review-template"
+                  value={selfReviewTemplate}
+                  onChange={(e) => setSelfReviewTemplate(e.target.value)}
+                  className="min-h-[400px] font-mono text-sm"
+                  data-testid="textarea-self-review-template"
+                />
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button
+                  variant="outline"
+                  onClick={resetSelfReview}
+                  data-testid="button-reset-self-review"
+                >
+                  <RotateCcw className="h-4 w-4 mr-2" />
+                  デフォルトに戻す
+                </Button>
+                <Button
+                  onClick={() => saveSelfReviewMutation.mutate()}
+                  disabled={saveSelfReviewMutation.isPending}
+                  className="bg-gradient-to-r from-[#FF8C42] to-[#FFA566] text-white"
+                  data-testid="button-save-self-review"
+                >
+                  {saveSelfReviewMutation.isPending ? (
                     <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                   ) : (
                     <Save className="h-4 w-4 mr-2" />

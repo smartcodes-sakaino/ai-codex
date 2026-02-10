@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Plus, Edit, Save, X, ChevronDown, FileText, Loader2 } from "lucide-react";
+import { Plus, Edit, Save, X, ChevronDown, FileText, Loader2, Link, Copy, Check } from "lucide-react";
 import { queryClient } from "@/lib/queryClient";
 import {
   fetchProblemWithBlocks,
@@ -10,6 +10,8 @@ import {
   updateBlock,
   deleteBlock,
   reorderBlocks,
+  createSelfReviewLink,
+  getSelfReviewLinkByProblemId,
 } from "@/lib/api";
 import type { Block, ProblemBlockContent, CodeBlockContent, TextBlockContent } from "@shared/schema";
 import { Button } from "@/components/ui/button";
@@ -20,6 +22,7 @@ import { ProblemBlock } from "@/components/blocks/problem-block";
 import { CodeBlock } from "@/components/blocks/code-block";
 import { TextBlock } from "@/components/blocks/text-block";
 import { AIReviewDialog } from "@/components/ai-review-dialog";
+import { useToast } from "@/hooks/use-toast";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -43,6 +46,10 @@ export default function ProblemPage() {
   const [editMode, setEditMode] = useState(false);
   const [deleteBlockId, setDeleteBlockId] = useState<string | null>(null);
   const [localBlocks, setLocalBlocks] = useState<Block[] | null>(null);
+  const [isGeneratingLink, setIsGeneratingLink] = useState(false);
+  const [selfReviewUrl, setSelfReviewUrl] = useState<string | null>(null);
+  const [linkCopied, setLinkCopied] = useState(false);
+  const { toast } = useToast();
 
   const {
     data: problemData,
@@ -203,6 +210,49 @@ export default function ProblemPage() {
       .join("\n\n");
   };
 
+  const { data: existingLink } = useQuery({
+    queryKey: ["/api/self-review-links/problem", id],
+    queryFn: () => getSelfReviewLinkByProblemId(id!),
+    enabled: !!id && hasExplanation,
+  });
+
+  const buildSelfReviewUrl = (token: string) => {
+    return `${window.location.origin}/self-review/${token}`;
+  };
+
+  const handleGenerateSelfReviewLink = async () => {
+    if (!id) return;
+    setIsGeneratingLink(true);
+    try {
+      const link = await createSelfReviewLink(id);
+      const url = buildSelfReviewUrl(link.token);
+      setSelfReviewUrl(url);
+      await navigator.clipboard.writeText(url);
+      setLinkCopied(true);
+      setTimeout(() => setLinkCopied(false), 3000);
+      queryClient.invalidateQueries({ queryKey: ["/api/self-review-links/problem", id] });
+      toast({ title: "リンクをコピーしました", description: "セルフレビュー用リンクをクリップボードにコピーしました" });
+    } catch (err) {
+      console.error("Failed to generate self-review link:", err);
+      toast({ title: "エラー", description: "リンクの生成に失敗しました", variant: "destructive" });
+    } finally {
+      setIsGeneratingLink(false);
+    }
+  };
+
+  const handleCopySelfReviewLink = async () => {
+    const url = selfReviewUrl || (existingLink ? buildSelfReviewUrl(existingLink.token) : null);
+    if (!url) return;
+    try {
+      await navigator.clipboard.writeText(url);
+      setLinkCopied(true);
+      setTimeout(() => setLinkCopied(false), 3000);
+      toast({ title: "リンクをコピーしました" });
+    } catch (err) {
+      console.error("Copy failed:", err);
+    }
+  };
+
   if (isProblemError) {
     setLocation("/");
     return null;
@@ -241,11 +291,39 @@ export default function ProblemPage() {
           <h1 className="text-2xl font-bold">{problemData.title}</h1>
           <div className="flex items-center gap-2">
             {hasExplanation && !editMode && (
-              <AIReviewDialog
-                problem={getProblemText()}
-                modelCode={getModelCode()}
-                explanation={getExplanationText()}
-              />
+              <>
+                <AIReviewDialog
+                  problem={getProblemText()}
+                  modelCode={getModelCode()}
+                  explanation={getExplanationText()}
+                />
+                {existingLink ? (
+                  <Button
+                    variant="outline"
+                    onClick={handleCopySelfReviewLink}
+                    className="gap-2"
+                    data-testid="button-copy-self-review-link"
+                  >
+                    {linkCopied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                    {linkCopied ? "コピー済み" : "セルフレビューリンク"}
+                  </Button>
+                ) : (
+                  <Button
+                    variant="outline"
+                    onClick={handleGenerateSelfReviewLink}
+                    disabled={isGeneratingLink}
+                    className="gap-2"
+                    data-testid="button-generate-self-review-link"
+                  >
+                    {isGeneratingLink ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Link className="h-4 w-4" />
+                    )}
+                    セルフレビュー用リンク発行
+                  </Button>
+                )}
+              </>
             )}
             {!editMode && (
               <Button

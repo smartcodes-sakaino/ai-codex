@@ -87,6 +87,52 @@ const DEFAULT_REVIEW_TEMPLATE = `#命令書:
 ## 修正が必要なところ（あれば）
 絶対に直さなければいけないところを列挙。指摘だけで済む場合など、修正点がない場合は無しでOK。`;
 
+const DEFAULT_SELF_REVIEW_TEMPLATE = `#命令書:
+あなたは教育のスペシャリストであり、プロのwebエンジニアです。
+研修生が提出したコードを、問題文・模範解答コード・解説文をもとにセルフレビューとしてフィードバックしてください。
+
+#制約条件
+- 対象は初学者の研修生です。丁寧でわかりやすい言い回しを使ってください。
+- 提出コードに修正の必要がない場合は、「総評」のみを出力し、確認テストの受講を促してください。
+- 提出コードに修正が必要な場合は、「総評」「良かった点」「改善点」「修正点」の4項目すべてを出力してください。
+
+#入力文
+・問題データ
+{{problem}}
+{{#if modelCode}}
+・模範解答コード
+\`\`\`
+{{modelCode}}
+\`\`\`
+{{/if}}
+{{#if explanation}}
+・解説文
+{{explanation}}
+{{/if}}
+
+・研修生の提出コード
+\`\`\`
+{{reviewCode}}
+\`\`\`
+
+#出力文
+以下の内容で、md形式で出力してください。
+
+修正が不要な場合（提出コードが十分に正しい場合）:
+## 総評
+提出コードの全体的な評価を記載。「素晴らしい出来です！」等の前向きなコメントと共に、確認テストへ進むよう促してください。
+例：「問題の要件を満たした素晴らしいコードです。次は確認テストに挑戦してみましょう！」
+
+修正が必要な場合:
+## 総評
+提出コードの全体的な評価を記載。
+## 良かった点
+研修生の提出コードの中で良かった部分を具体的に挙げてください。モチベーションを上げる前向きなフィードバック。
+## 改善点
+より良くするための改善案やリファクタリングの提案。「こうするともっと良くなりますよ」というアドバイス。
+## 修正点
+絶対に修正しなければならない箇所を具体的に列挙してください。何が間違っていて、どう直すべきかを明確に説明してください。`;
+
 // Template processor for Handlebars-like syntax
 function processTemplate(template: string, vars: Record<string, string | undefined>): string {
   let result = template;
@@ -482,6 +528,137 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error saving prompt:", error);
       res.status(500).json({ error: "プロンプトの保存に失敗しました" });
+    }
+  });
+
+  // ============================================
+  // Self Review Links Routes
+  // ============================================
+
+  app.post("/api/self-review-links", async (req, res) => {
+    try {
+      const { problemId } = req.body;
+      if (!problemId) {
+        return res.status(400).json({ error: "problemIdが必要です" });
+      }
+
+      const existing = await storage.getSelfReviewLinkByProblemId(problemId);
+      if (existing) {
+        return res.json(existing);
+      }
+
+      const token = randomUUID().replace(/-/g, "").slice(0, 16);
+      const link = await storage.createSelfReviewLink({ problemId, token });
+      res.json(link);
+    } catch (error) {
+      console.error("Error creating self-review link:", error);
+      res.status(500).json({ error: "リンクの作成に失敗しました" });
+    }
+  });
+
+  app.get("/api/self-review-links/problem/:problemId", async (req, res) => {
+    try {
+      const link = await storage.getSelfReviewLinkByProblemId(req.params.problemId);
+      if (!link) {
+        return res.status(404).json({ error: "リンクが見つかりません" });
+      }
+      res.json(link);
+    } catch (error) {
+      console.error("Error fetching self-review link:", error);
+      res.status(500).json({ error: "リンクの取得に失敗しました" });
+    }
+  });
+
+  app.get("/api/self-review/:token", async (req, res) => {
+    try {
+      const link = await storage.getSelfReviewLinkByToken(req.params.token);
+      if (!link) {
+        return res.status(404).json({ error: "無効なリンクです" });
+      }
+
+      const problemWithBlocks = await storage.getProblemWithBlocks(link.problemId);
+      if (!problemWithBlocks) {
+        return res.status(404).json({ error: "問題が見つかりません" });
+      }
+
+      const problem = await storage.getProblem(link.problemId);
+      const chapter = problem ? await storage.getChapter(problem.chapterId) : null;
+
+      res.json({
+        problemTitle: problemWithBlocks.title,
+        chapterTitle: chapter?.title || "",
+      });
+    } catch (error) {
+      console.error("Error fetching self-review data:", error);
+      res.status(500).json({ error: "データの取得に失敗しました" });
+    }
+  });
+
+  const selfReviewSchema = z.object({
+    token: z.string().min(1, "トークンが必要です"),
+    reviewCode: z.string().min(1, "レビュー対象のコードが必要です").max(200000, "コードが長すぎます"),
+  });
+
+  app.post("/api/ai/self-review", async (req, res) => {
+    try {
+      const parseResult = selfReviewSchema.safeParse(req.body);
+      if (!parseResult.success) {
+        const errorMessage = parseResult.error.errors[0]?.message || "入力が無効です";
+        return res.status(400).json({ error: errorMessage });
+      }
+      const { token, reviewCode } = parseResult.data;
+
+      const link = await storage.getSelfReviewLinkByToken(token);
+      if (!link) {
+        return res.status(404).json({ error: "無効なリンクです" });
+      }
+
+      const problemWithBlocks = await storage.getProblemWithBlocks(link.problemId);
+      if (!problemWithBlocks) {
+        return res.status(404).json({ error: "問題が見つかりません" });
+      }
+
+      const problemText = problemWithBlocks.blocks
+        .filter(b => b.type === "problem")
+        .map(b => (b.content as any).text)
+        .filter(Boolean)
+        .join("\n\n");
+
+      const modelCode = problemWithBlocks.blocks
+        .filter(b => b.type === "code")
+        .map(b => {
+          const content = b.content as any;
+          return `// Language: ${content.language}\n${content.code}`;
+        })
+        .filter(code => code.length > 20)
+        .join("\n\n");
+
+      const explanation = problemWithBlocks.blocks
+        .filter(b => b.type === "text")
+        .map(b => (b.content as any).text)
+        .filter(Boolean)
+        .join("\n\n");
+
+      const savedPrompt = await storage.getPrompt("self_review");
+      const template = savedPrompt?.template || DEFAULT_SELF_REVIEW_TEMPLATE;
+
+      const prompt = processTemplate(template, {
+        problem: problemText,
+        modelCode,
+        explanation,
+        reviewCode,
+      });
+
+      const response = await ai.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+      });
+
+      const review = response.text || "レビューを生成できませんでした。";
+      res.json({ review });
+    } catch (error) {
+      console.error("セルフレビュー生成エラー:", error);
+      res.status(500).json({ error: "セルフレビューの生成に失敗しました" });
     }
   });
 

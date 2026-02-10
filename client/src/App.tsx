@@ -8,6 +8,7 @@ import Dashboard from "@/pages/dashboard";
 import ChapterPage from "@/pages/chapter";
 import ProblemPage from "@/pages/problem";
 import SettingsPage from "@/pages/settings";
+import SelfReviewPage from "@/pages/self-review";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -17,6 +18,7 @@ function Router() {
       <Route path="/chapter/:id" component={ChapterPage} />
       <Route path="/problem/:id" component={ProblemPage} />
       <Route path="/settings" component={SettingsPage} />
+      <Route path="/self-review/:token" component={SelfReviewPage} />
       <Route component={NotFound} />
     </Switch>
   );
