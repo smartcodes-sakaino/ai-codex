@@ -1,34 +1,16 @@
-import { Storage, File } from "@google-cloud/storage";
-import { Response } from "express";
-import { randomUUID } from "crypto";
-import {
-  ObjectAclPolicy,
-  ObjectPermission,
-  canAccessObject,
-  getObjectAclPolicy,
-  setObjectAclPolicy,
-} from "./objectAcl";
+import { google } from "googleapis";
+import type { Response } from "express";
+import { Readable } from "stream";
 
-const REPLIT_SIDECAR_ENDPOINT = "http://127.0.0.1:1106";
-
-// The object storage client is used to interact with the object storage service.
-export const objectStorageClient = new Storage({
-  credentials: {
-    audience: "replit",
-    subject_token_type: "access_token",
-    token_url: `${REPLIT_SIDECAR_ENDPOINT}/token`,
-    type: "external_account",
-    credential_source: {
-      url: `${REPLIT_SIDECAR_ENDPOINT}/credential`,
-      format: {
-        type: "json",
-        subject_token_field_name: "access_token",
-      },
-    },
-    universe_domain: "googleapis.com",
-  },
-  projectId: "",
+// The Drive client is used to interact with Google Drive.
+// Authenticates via Application Default Credentials: set GOOGLE_APPLICATION_CREDENTIALS
+// to the path of a Google Cloud service account key JSON file. The service account must
+// be added as a member of the shared Drive folder used for storage.
+const auth = new google.auth.GoogleAuth({
+  scopes: ["https://www.googleapis.com/auth/drive"],
 });
+
+export const driveClient = google.drive({ version: "v3", auth });
 
 export class ObjectNotFoundError extends Error {
   constructor() {
@@ -38,90 +20,138 @@ export class ObjectNotFoundError extends Error {
   }
 }
 
-// The object storage service is used to interact with the object storage service.
+function getImagesFolderId(): string {
+  const folderId = process.env.DRIVE_IMAGES_FOLDER_ID || "";
+  if (!folderId) {
+    throw new Error(
+      "DRIVE_IMAGES_FOLDER_ID not set. Set it to the ID of the Google Drive folder " +
+        "used for storing images (the folder ID from its share URL)."
+    );
+  }
+  return folderId;
+}
+
+// The object storage service stores files in a shared Google Drive folder.
 export class ObjectStorageService {
   constructor() {}
 
-  // Gets the public object search paths.
-  getPublicObjectSearchPaths(): Array<string> {
-    const pathsStr = process.env.PUBLIC_OBJECT_SEARCH_PATHS || "";
-    const paths = Array.from(
-      new Set(
-        pathsStr
-          .split(",")
-          .map((path) => path.trim())
-          .filter((path) => path.length > 0)
-      )
-    );
-    if (paths.length === 0) {
-      throw new Error(
-        "PUBLIC_OBJECT_SEARCH_PATHS not set. Create a bucket in 'Object Storage' " +
-          "tool and set PUBLIC_OBJECT_SEARCH_PATHS env var (comma-separated paths)."
-      );
+  // Uploads a buffer directly (e.g. an AI-generated icon) and returns its object path.
+  async uploadBuffer(
+    buffer: Buffer,
+    filename: string,
+    mimeType: string,
+    options: { public?: boolean } = {}
+  ): Promise<string> {
+    const fileId = await this.generateFileId();
+
+    await driveClient.files.create({
+      requestBody: { id: fileId, name: filename, parents: [getImagesFolderId()] },
+      media: { mimeType, body: Readable.from(buffer) },
+      supportsAllDrives: true,
+      fields: "id",
+    });
+
+    if (options.public) {
+      await this.makePublic(fileId);
     }
-    return paths;
+
+    return `/objects/${fileId}`;
   }
 
-  // Gets the private object directory.
-  getPrivateObjectDir(): string {
-    const dir = process.env.PRIVATE_OBJECT_DIR || "";
-    if (!dir) {
-      throw new Error(
-        "PRIVATE_OBJECT_DIR not set. Create a bucket in 'Object Storage' " +
-          "tool and set PRIVATE_OBJECT_DIR env var."
-      );
-    }
-    return dir;
+  // Grants "anyone with the link" read access to an uploaded file.
+  async makePublic(fileId: string): Promise<void> {
+    await driveClient.permissions.create({
+      fileId,
+      requestBody: { role: "reader", type: "anyone" },
+      supportsAllDrives: true,
+    });
   }
 
-  // Search for a public object from the search paths.
-  async searchPublicObject(filePath: string): Promise<File | null> {
-    for (const searchPath of this.getPublicObjectSearchPaths()) {
-      const fullPath = `${searchPath}/${filePath}`;
+  // Starts a resumable upload session and returns a URL the client can PUT the file to directly.
+  async getObjectEntityUploadURL(
+    name: string,
+    contentType: string
+  ): Promise<{ uploadURL: string; objectPath: string }> {
+    const fileId = await this.generateFileId();
 
-      // Full path format: /<bucket_name>/<object_name>
-      const { bucketName, objectName } = parseObjectPath(fullPath);
-      const bucket = objectStorageClient.bucket(bucketName);
-      const file = bucket.file(objectName);
+    const authClient = await auth.getClient();
+    const { token: accessToken } = await authClient.getAccessToken();
 
-      // Check if file exists
-      const [exists] = await file.exists();
-      if (exists) {
-        return file;
+    const initResponse = await fetch(
+      "https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&supportsAllDrives=true",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json; charset=UTF-8",
+          "X-Upload-Content-Type": contentType,
+        },
+        body: JSON.stringify({ id: fileId, name, parents: [getImagesFolderId()] }),
       }
+    );
+
+    if (!initResponse.ok) {
+      throw new Error(
+        `Failed to start Drive upload session (status ${initResponse.status})`
+      );
     }
 
-    return null;
+    const uploadURL = initResponse.headers.get("Location");
+    if (!uploadURL) {
+      throw new Error("Drive did not return an upload session URL");
+    }
+
+    return { uploadURL, objectPath: `/objects/${fileId}` };
+  }
+
+  // Confirms an object exists and returns its Drive file ID.
+  async getObjectEntityFile(objectPath: string): Promise<string> {
+    if (!objectPath.startsWith("/objects/")) {
+      throw new ObjectNotFoundError();
+    }
+
+    const fileId = objectPath.slice("/objects/".length);
+    if (!fileId) {
+      throw new ObjectNotFoundError();
+    }
+
+    try {
+      await driveClient.files.get({ fileId, fields: "id", supportsAllDrives: true });
+    } catch {
+      throw new ObjectNotFoundError();
+    }
+
+    return fileId;
   }
 
   // Downloads an object to the response.
-  async downloadObject(file: File, res: Response, cacheTtlSec: number = 3600) {
+  async downloadObject(fileId: string, res: Response, cacheTtlSec: number = 3600) {
     try {
-      // Get file metadata
-      const [metadata] = await file.getMetadata();
-      // Get the ACL policy for the object.
-      const aclPolicy = await getObjectAclPolicy(file);
-      const isPublic = aclPolicy?.visibility === "public";
-      // Set appropriate headers
-      res.set({
-        "Content-Type": metadata.contentType || "application/octet-stream",
-        "Content-Length": metadata.size,
-        "Cache-Control": `${
-          isPublic ? "public" : "private"
-        }, max-age=${cacheTtlSec}`,
+      const metadata = await driveClient.files.get({
+        fileId,
+        fields: "mimeType,size",
+        supportsAllDrives: true,
       });
 
-      // Stream the file to the response
-      const stream = file.createReadStream();
+      res.set({
+        "Content-Type": metadata.data.mimeType || "application/octet-stream",
+        ...(metadata.data.size ? { "Content-Length": metadata.data.size } : {}),
+        "Cache-Control": `public, max-age=${cacheTtlSec}`,
+      });
 
-      stream.on("error", (err) => {
+      const stream = await driveClient.files.get(
+        { fileId, alt: "media", supportsAllDrives: true },
+        { responseType: "stream" }
+      );
+
+      stream.data.on("error", (err: Error) => {
         console.error("Stream error:", err);
         if (!res.headersSent) {
           res.status(500).json({ error: "Error streaming file" });
         }
       });
 
-      stream.pipe(res);
+      stream.data.pipe(res);
     } catch (error) {
       console.error("Error downloading file:", error);
       if (!res.headersSent) {
@@ -130,171 +160,12 @@ export class ObjectStorageService {
     }
   }
 
-  // Gets the upload URL for an object entity.
-  async getObjectEntityUploadURL(): Promise<string> {
-    const privateObjectDir = this.getPrivateObjectDir();
-    if (!privateObjectDir) {
-      throw new Error(
-        "PRIVATE_OBJECT_DIR not set. Create a bucket in 'Object Storage' " +
-          "tool and set PRIVATE_OBJECT_DIR env var."
-      );
+  private async generateFileId(): Promise<string> {
+    const { data } = await driveClient.files.generateIds({ count: 1 });
+    const fileId = data.ids?.[0];
+    if (!fileId) {
+      throw new Error("Failed to generate a Drive file ID");
     }
-
-    const objectId = randomUUID();
-    const fullPath = `${privateObjectDir}/uploads/${objectId}`;
-
-    const { bucketName, objectName } = parseObjectPath(fullPath);
-
-    // Sign URL for PUT method with TTL
-    return signObjectURL({
-      bucketName,
-      objectName,
-      method: "PUT",
-      ttlSec: 900,
-    });
-  }
-
-  // Gets the object entity file from the object path.
-  async getObjectEntityFile(objectPath: string): Promise<File> {
-    if (!objectPath.startsWith("/objects/")) {
-      throw new ObjectNotFoundError();
-    }
-
-    const parts = objectPath.slice(1).split("/");
-    if (parts.length < 2) {
-      throw new ObjectNotFoundError();
-    }
-
-    const entityId = parts.slice(1).join("/");
-    let entityDir = this.getPrivateObjectDir();
-    if (!entityDir.endsWith("/")) {
-      entityDir = `${entityDir}/`;
-    }
-    const objectEntityPath = `${entityDir}${entityId}`;
-    const { bucketName, objectName } = parseObjectPath(objectEntityPath);
-    const bucket = objectStorageClient.bucket(bucketName);
-    const objectFile = bucket.file(objectName);
-    const [exists] = await objectFile.exists();
-    if (!exists) {
-      throw new ObjectNotFoundError();
-    }
-    return objectFile;
-  }
-
-  normalizeObjectEntityPath(
-    rawPath: string,
-  ): string {
-    if (!rawPath.startsWith("https://storage.googleapis.com/")) {
-      return rawPath;
-    }
-  
-    // Extract the path from the URL by removing query parameters and domain
-    const url = new URL(rawPath);
-    const rawObjectPath = url.pathname;
-  
-    let objectEntityDir = this.getPrivateObjectDir();
-    if (!objectEntityDir.endsWith("/")) {
-      objectEntityDir = `${objectEntityDir}/`;
-    }
-  
-    if (!rawObjectPath.startsWith(objectEntityDir)) {
-      return rawObjectPath;
-    }
-  
-    // Extract the entity ID from the path
-    const entityId = rawObjectPath.slice(objectEntityDir.length);
-    return `/objects/${entityId}`;
-  }
-
-  // Tries to set the ACL policy for the object entity and return the normalized path.
-  async trySetObjectEntityAclPolicy(
-    rawPath: string,
-    aclPolicy: ObjectAclPolicy
-  ): Promise<string> {
-    const normalizedPath = this.normalizeObjectEntityPath(rawPath);
-    if (!normalizedPath.startsWith("/")) {
-      return normalizedPath;
-    }
-
-    const objectFile = await this.getObjectEntityFile(normalizedPath);
-    await setObjectAclPolicy(objectFile, aclPolicy);
-    return normalizedPath;
-  }
-
-  // Checks if the user can access the object entity.
-  async canAccessObjectEntity({
-    userId,
-    objectFile,
-    requestedPermission,
-  }: {
-    userId?: string;
-    objectFile: File;
-    requestedPermission?: ObjectPermission;
-  }): Promise<boolean> {
-    return canAccessObject({
-      userId,
-      objectFile,
-      requestedPermission: requestedPermission ?? ObjectPermission.READ,
-    });
+    return fileId;
   }
 }
-
-function parseObjectPath(path: string): {
-  bucketName: string;
-  objectName: string;
-} {
-  if (!path.startsWith("/")) {
-    path = `/${path}`;
-  }
-  const pathParts = path.split("/");
-  if (pathParts.length < 3) {
-    throw new Error("Invalid path: must contain at least a bucket name");
-  }
-
-  const bucketName = pathParts[1];
-  const objectName = pathParts.slice(2).join("/");
-
-  return {
-    bucketName,
-    objectName,
-  };
-}
-
-async function signObjectURL({
-  bucketName,
-  objectName,
-  method,
-  ttlSec,
-}: {
-  bucketName: string;
-  objectName: string;
-  method: "GET" | "PUT" | "DELETE" | "HEAD";
-  ttlSec: number;
-}): Promise<string> {
-  const request = {
-    bucket_name: bucketName,
-    object_name: objectName,
-    method,
-    expires_at: new Date(Date.now() + ttlSec * 1000).toISOString(),
-  };
-  const response = await fetch(
-    `${REPLIT_SIDECAR_ENDPOINT}/object-storage/signed-object-url`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(request),
-    }
-  );
-  if (!response.ok) {
-    throw new Error(
-      `Failed to sign object URL, errorcode: ${response.status}, ` +
-        `make sure you're running on Replit`
-    );
-  }
-
-  const { signed_url: signedURL } = await response.json();
-  return signedURL;
-}
-

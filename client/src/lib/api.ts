@@ -147,6 +147,15 @@ export async function generateIcon(data: {
   return response.json();
 }
 
+export async function getIconPrompt(data: {
+  title: string;
+  genre?: string;
+  colorIndex?: number;
+}): Promise<{ prompt: string }> {
+  const response = await apiRequest("POST", "/api/ai/icon-prompt", data);
+  return response.json();
+}
+
 // ============================================
 // File Upload API
 // ============================================

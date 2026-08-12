@@ -4,3 +4,7 @@ dist
 server/public
 vite.config.ts.*
 *.tar.gz
+.env
+*.json.key
+gcs-service-account*.json
+ringed-subject-503107-q2-aa0d1341a504.json

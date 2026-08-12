@@ -45,10 +45,10 @@ export function registerObjectStorageRoutes(app: Express): void {
         });
       }
 
-      const uploadURL = await objectStorageService.getObjectEntityUploadURL();
-
-      // Extract object path from the presigned URL for later reference
-      const objectPath = objectStorageService.normalizeObjectEntityPath(uploadURL);
+      const { uploadURL, objectPath } = await objectStorageService.getObjectEntityUploadURL(
+        name,
+        contentType || "application/octet-stream"
+      );
 
       res.json({
         uploadURL,
@@ -72,8 +72,8 @@ export function registerObjectStorageRoutes(app: Express): void {
    */
   app.get("/objects/*path", async (req, res) => {
     try {
-      const objectFile = await objectStorageService.getObjectEntityFile(req.path);
-      await objectStorageService.downloadObject(objectFile, res);
+      const fileId = await objectStorageService.getObjectEntityFile(req.path);
+      await objectStorageService.downloadObject(fileId, res);
     } catch (error) {
       console.error("Error serving object:", error);
       if (error instanceof ObjectNotFoundError) {

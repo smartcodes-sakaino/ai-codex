@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Plus, Edit, BookOpen, ChevronUp, ChevronDown, Filter, ArrowUpDown, Loader2, Sparkles, RefreshCw } from "lucide-react";
-import { fetchChapters, fetchGenres, createChapter, updateChapter, deleteChapter, reorderChapters, generateIcon } from "@/lib/api";
+import { Plus, Edit, BookOpen, ChevronUp, ChevronDown, Filter, ArrowUpDown, Loader2, Upload, RefreshCw, Wand2, Copy } from "lucide-react";
+import { fetchChapters, fetchGenres, createChapter, updateChapter, deleteChapter, reorderChapters, uploadFile, getIconPrompt } from "@/lib/api";
 import { queryClient } from "@/lib/queryClient";
 import type { ChapterWithCount } from "@shared/schema";
 import mascotGraduate from "@assets/mascot-graduate.png";
@@ -64,6 +64,10 @@ export default function Dashboard() {
   const [isGeneratingIcon, setIsGeneratingIcon] = useState(false);
   const [editIcon, setEditIcon] = useState<string | null>(null);
   const [isGeneratingEditIcon, setIsGeneratingEditIcon] = useState(false);
+  const newChapterFileInputRef = useRef<HTMLInputElement>(null);
+  const editChapterFileInputRef = useRef<HTMLInputElement>(null);
+  const [promptDialogText, setPromptDialogText] = useState<string | null>(null);
+  const [isCreatingPrompt, setIsCreatingPrompt] = useState(false);
 
   const { toast } = useToast();
 
@@ -154,26 +158,64 @@ export default function Dashboard() {
     return valid;
   };
 
-  const handleGenerateIcon = async () => {
-    if (!newChapterTitle.trim()) return;
-    
+  const handleUploadIcon = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+
     setIsGeneratingIcon(true);
     try {
-      const isNewGenreMode = useNewGenre || existingGenres.length === 0;
-      const genre = isNewGenreMode ? newChapterGenreInput.trim() : newChapterGenre;
-      // New chapter gets the next colorIndex based on current chapter count
-      const colorIndex = chapters.length % 6;
-      const result = await generateIcon({ title: newChapterTitle.trim(), genre: genre || undefined, colorIndex });
-      setNewChapterIcon(result.iconUrl);
+      const objectPath = await uploadFile(file);
+      setNewChapterIcon(objectPath);
     } catch (error) {
-      console.error("Failed to generate icon:", error);
+      console.error("Failed to upload icon:", error);
       toast({
-        title: "サムネイル生成エラー",
-        description: "サムネイルの生成に失敗しました。もう一度お試しください。",
+        title: "画像アップロードエラー",
+        description: "画像のアップロードに失敗しました。もう一度お試しください。",
         variant: "destructive",
       });
     } finally {
       setIsGeneratingIcon(false);
+    }
+  };
+
+  const handleCreatePrompt = async (title: string, genre: string, colorIndex: number) => {
+    if (!title.trim()) return;
+
+    setIsCreatingPrompt(true);
+    try {
+      const { prompt } = await getIconPrompt({ title: title.trim(), genre: genre || undefined, colorIndex });
+      setPromptDialogText(prompt);
+    } catch (error) {
+      console.error("Failed to create prompt:", error);
+      toast({
+        title: "プロンプト作成エラー",
+        description: "プロンプトの作成に失敗しました。もう一度お試しください。",
+        variant: "destructive",
+      });
+    } finally {
+      setIsCreatingPrompt(false);
+    }
+  };
+
+  const handleCreatePromptForNewChapter = () => {
+    const isNewGenreMode = useNewGenre || existingGenres.length === 0;
+    const genre = isNewGenreMode ? newChapterGenreInput.trim() : newChapterGenre;
+    handleCreatePrompt(newChapterTitle, genre, chapters.length % 6);
+  };
+
+  const handleCopyPrompt = async () => {
+    if (!promptDialogText) return;
+    try {
+      await navigator.clipboard.writeText(promptDialogText);
+      toast({ title: "コピーしました", description: "プロンプトをクリップボードにコピーしました" });
+    } catch (error) {
+      console.error("Failed to copy prompt:", error);
+      toast({
+        title: "コピーエラー",
+        description: "クリップボードへのコピーに失敗しました",
+        variant: "destructive",
+      });
     }
   };
 
@@ -230,27 +272,31 @@ export default function Dashboard() {
     setEditIcon(chapter.icon || null);
   };
 
-  const handleGenerateEditIcon = async () => {
-    if (!editTitle.trim() || !editChapter) return;
-    
+  const handleUploadEditIcon = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+
     setIsGeneratingEditIcon(true);
     try {
-      const isNewGenreMode = editUseNewGenre || existingGenres.length === 0;
-      const genre = isNewGenreMode ? editGenreInput.trim() : editGenre;
-      // Use the chapter's stored colorIndex for consistent background color
-      const colorIndex = editChapter.colorIndex ?? 0;
-      const result = await generateIcon({ title: editTitle.trim(), genre: genre || undefined, colorIndex });
-      setEditIcon(result.iconUrl);
+      const objectPath = await uploadFile(file);
+      setEditIcon(objectPath);
     } catch (error) {
-      console.error("Failed to generate icon:", error);
+      console.error("Failed to upload icon:", error);
       toast({
-        title: "サムネイル生成エラー",
-        description: "サムネイルの生成に失敗しました。もう一度お試しください。",
+        title: "画像アップロードエラー",
+        description: "画像のアップロードに失敗しました。もう一度お試しください。",
         variant: "destructive",
       });
     } finally {
       setIsGeneratingEditIcon(false);
     }
+  };
+
+  const handleCreatePromptForEditChapter = () => {
+    const isNewGenreMode = editUseNewGenre || existingGenres.length === 0;
+    const genre = isNewGenreMode ? editGenreInput.trim() : editGenre;
+    handleCreatePrompt(editTitle, genre, editChapter?.colorIndex ?? 0);
   };
 
   const validateEditForm = (): boolean => {
@@ -508,36 +554,63 @@ export default function Dashboard() {
                   </div>
                 ) : (
                   <div className="w-32 aspect-video rounded-md border-2 border-dashed border-muted-foreground/30 flex items-center justify-center text-muted-foreground" data-testid="container-icon-placeholder">
-                    <Sparkles className="h-6 w-6" />
+                    <Upload className="h-6 w-6" />
                   </div>
                 )}
+                <input
+                  type="file"
+                  accept="image/*"
+                  ref={newChapterFileInputRef}
+                  onChange={handleUploadIcon}
+                  className="hidden"
+                  data-testid="input-icon-upload"
+                />
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={handleGenerateIcon}
-                  disabled={isGeneratingIcon || !newChapterTitle.trim()}
-                  data-testid="button-generate-icon"
+                  onClick={() => newChapterFileInputRef.current?.click()}
+                  disabled={isGeneratingIcon}
+                  data-testid="button-upload-icon"
                 >
                   {isGeneratingIcon ? (
                     <>
                       <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                      生成中...
+                      アップロード中...
                     </>
                   ) : newChapterIcon ? (
                     <>
                       <RefreshCw className="h-4 w-4 mr-2" />
-                      再生成
+                      画像を変更
                     </>
                   ) : (
                     <>
-                      <Sparkles className="h-4 w-4 mr-2" />
-                      AIでサムネイル生成
+                      <Upload className="h-4 w-4 mr-2" />
+                      画像をアップロード
+                    </>
+                  )}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleCreatePromptForNewChapter}
+                  disabled={isCreatingPrompt || !newChapterTitle.trim()}
+                  data-testid="button-create-prompt"
+                >
+                  {isCreatingPrompt ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                      作成中...
+                    </>
+                  ) : (
+                    <>
+                      <Wand2 className="h-4 w-4 mr-2" />
+                      プロンプトを作成
                     </>
                   )}
                 </Button>
               </div>
               <p className="text-xs text-muted-foreground" data-testid="text-icon-hint">
-                セクション名を入力してからサムネイルを生成してください
+                サムネイルに使う画像をアップロードしてください。生成AI用のプロンプトも作成できます
               </p>
             </div>
           </div>
@@ -625,30 +698,57 @@ export default function Dashboard() {
                   </div>
                 ) : (
                   <div className="w-32 aspect-video rounded-md border-2 border-dashed border-muted-foreground/30 flex items-center justify-center text-muted-foreground" data-testid="container-edit-icon-placeholder">
-                    <Sparkles className="h-6 w-6" />
+                    <Upload className="h-6 w-6" />
                   </div>
                 )}
+                <input
+                  type="file"
+                  accept="image/*"
+                  ref={editChapterFileInputRef}
+                  onChange={handleUploadEditIcon}
+                  className="hidden"
+                  data-testid="input-edit-icon-upload"
+                />
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={handleGenerateEditIcon}
-                  disabled={isGeneratingEditIcon || !editTitle.trim()}
-                  data-testid="button-generate-edit-icon"
+                  onClick={() => editChapterFileInputRef.current?.click()}
+                  disabled={isGeneratingEditIcon}
+                  data-testid="button-upload-edit-icon"
                 >
                   {isGeneratingEditIcon ? (
                     <>
                       <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                      生成中...
+                      アップロード中...
                     </>
                   ) : editIcon ? (
                     <>
                       <RefreshCw className="h-4 w-4 mr-2" />
-                      再生成
+                      画像を変更
                     </>
                   ) : (
                     <>
-                      <Sparkles className="h-4 w-4 mr-2" />
-                      AIでサムネイル生成
+                      <Upload className="h-4 w-4 mr-2" />
+                      画像をアップロード
+                    </>
+                  )}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleCreatePromptForEditChapter}
+                  disabled={isCreatingPrompt || !editTitle.trim()}
+                  data-testid="button-create-edit-prompt"
+                >
+                  {isCreatingPrompt ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                      作成中...
+                    </>
+                  ) : (
+                    <>
+                      <Wand2 className="h-4 w-4 mr-2" />
+                      プロンプトを作成
                     </>
                   )}
                 </Button>
@@ -698,6 +798,32 @@ export default function Dashboard() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <Dialog open={!!promptDialogText} onOpenChange={(open) => !open && setPromptDialogText(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>画像生成用プロンプト</DialogTitle>
+            <DialogDescription>
+              このテキストをコピーして、Gemini等の画像生成AIに貼り付けて使ってください。
+            </DialogDescription>
+          </DialogHeader>
+          <textarea
+            readOnly
+            value={promptDialogText ?? ""}
+            className="w-full h-48 rounded-md border border-input bg-background p-3 text-sm resize-none"
+            data-testid="textarea-icon-prompt"
+          />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPromptDialogText(null)}>
+              閉じる
+            </Button>
+            <Button onClick={handleCopyPrompt} data-testid="button-copy-prompt">
+              <Copy className="h-4 w-4 mr-2" />
+              コピー
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -3,16 +3,12 @@ import { createServer, type Server } from "http";
 import { GoogleGenAI, Modality } from "@google/genai";
 import { storage } from "./storage";
 import { insertChapterSchema, insertProblemSchema, insertBlockSchema, insertPromptSchema } from "@shared/schema";
-import { registerObjectStorageRoutes, ObjectStorageService, objectStorageClient } from "./replit_integrations/object_storage";
+import { registerObjectStorageRoutes, ObjectStorageService } from "./replit_integrations/object_storage";
 import { z } from "zod";
 import { randomUUID } from "crypto";
 
 const ai = new GoogleGenAI({
-  apiKey: process.env.AI_INTEGRATIONS_GEMINI_API_KEY,
-  httpOptions: {
-    apiVersion: "",
-    baseUrl: process.env.AI_INTEGRATIONS_GEMINI_BASE_URL,
-  },
+  apiKey: process.env.GEMINI_API_KEY,
 });
 
 const imageAi = ai;
@@ -682,6 +678,22 @@ export async function registerRoutes(
     { color: "#E74C3C", name: "coral red #E74C3C" },
   ];
 
+  function buildIconPrompt(title: string, genre: string | undefined, colorIndex: number | undefined): string {
+    const bgColor = thumbnailBackgrounds[(colorIndex ?? 0) % thumbnailBackgrounds.length];
+    return `A cute round blob mascot character named "Codey" - a white colored blob with two simple black dot eyes, tiny pink blush circles on cheeks, small stubby arms and legs. Codey is doing an activity related to "${title}"${genre ? ` (${genre})` : ""}. Consistent character design: same white blob body, same facial features. Only the pose, accessories, and small outfit details change based on the topic. IMPORTANT LAYOUT: The character should be positioned in the LOWER HALF of the image, leaving the TOP 30-40% of the image as EMPTY SPACE. The character should be medium-sized (about 50-60% of the image width). Background: solid flat ${bgColor.name} color, single uniform color fill, no gradients, no patterns. Flat vector illustration, kawaii Japanese style, clean lines, soft shadows, no text no words no letters.`;
+  }
+
+  // Returns the icon generation prompt text without calling the AI (for manual use elsewhere)
+  app.post("/api/ai/icon-prompt", (req, res) => {
+    const parseResult = iconGenerationSchema.safeParse(req.body);
+    if (!parseResult.success) {
+      const errorMessage = parseResult.error.errors[0]?.message || "入力が無効です";
+      return res.status(400).json({ error: errorMessage });
+    }
+    const { title, genre, colorIndex } = parseResult.data;
+    res.json({ prompt: buildIconPrompt(title, genre, colorIndex) });
+  });
+
   // Regenerate all chapter icons (for remix/migration)
   app.post("/api/ai/regenerate-all-icons", async (req, res) => {
     try {
@@ -690,8 +702,7 @@ export async function registerRoutes(
 
       for (const chapter of chapters) {
         try {
-          const bgColor = thumbnailBackgrounds[(chapter.colorIndex ?? 0) % thumbnailBackgrounds.length];
-          const prompt = `A cute round blob mascot character named "Codey" - a white colored blob with two simple black dot eyes, tiny pink blush circles on cheeks, small stubby arms and legs. Codey is doing an activity related to "${chapter.title}"${chapter.genre ? ` (${chapter.genre})` : ""}. Consistent character design: same white blob body, same facial features. Only the pose, accessories, and small outfit details change based on the topic. IMPORTANT LAYOUT: The character should be positioned in the LOWER HALF of the image, leaving the TOP 30-40% of the image as EMPTY SPACE. The character should be medium-sized (about 50-60% of the image width). Background: solid flat ${bgColor.name} color, single uniform color fill, no gradients, no patterns. Flat vector illustration, kawaii Japanese style, clean lines, soft shadows, no text no words no letters.`;
+          const prompt = buildIconPrompt(chapter.title, chapter.genre ?? undefined, chapter.colorIndex ?? undefined);
 
           const response = await imageAi.models.generateContent({
             model: "gemini-2.5-flash-image",
@@ -712,29 +723,13 @@ export async function registerRoutes(
           const imageBytes = imagePart.inlineData.data;
 
           // Save to object storage
-          const privateObjectDir = objectStorageService.getPrivateObjectDir();
           const objectId = randomUUID();
-          const objectPath = `${privateObjectDir}/icons/${objectId}.png`;
-
-          const pathParts = objectPath.split("/").filter(Boolean);
-          const bucketName = pathParts[0];
-          const objectName = pathParts.slice(1).join("/");
-
-          const bucket = objectStorageClient.bucket(bucketName);
-          const file = bucket.file(objectName);
-
           const buffer = Buffer.from(imageBytes, "base64");
-          await file.save(buffer, {
-            contentType: "image/png",
-            metadata: { contentType: "image/png" },
-          });
-
-          await objectStorageService.trySetObjectEntityAclPolicy(
-            `/objects/icons/${objectId}.png`,
-            { owner: "system", visibility: "public" }
+          const iconUrl = await objectStorageService.uploadBuffer(
+            buffer,
+            `icon-${objectId}.png`,
+            "image/png"
           );
-
-          const iconUrl = `/objects/icons/${objectId}.png`;
 
           // Update chapter in database
           await storage.updateChapter(chapter.id, { icon: iconUrl });
@@ -763,8 +758,7 @@ export async function registerRoutes(
       }
       const { title, genre, colorIndex } = parseResult.data;
 
-      const bgColor = thumbnailBackgrounds[(colorIndex ?? 0) % thumbnailBackgrounds.length];
-      const prompt = `A cute round blob mascot character named "Codey" - a white colored blob with two simple black dot eyes, tiny pink blush circles on cheeks, small stubby arms and legs. Codey is doing an activity related to "${title}"${genre ? ` (${genre})` : ""}. Consistent character design: same white blob body, same facial features. Only the pose, accessories, and small outfit details change based on the topic. IMPORTANT LAYOUT: The character should be positioned in the LOWER HALF of the image, leaving the TOP 30-40% of the image as EMPTY SPACE. The character should be medium-sized (about 50-60% of the image width). Background: solid flat ${bgColor.name} color, single uniform color fill, no gradients, no patterns. Flat vector illustration, kawaii Japanese style, clean lines, soft shadows, no text no words no letters.`;
+      const prompt = buildIconPrompt(title, genre, colorIndex);
 
       const response = await imageAi.models.generateContent({
         model: "gemini-2.5-flash-image",
@@ -784,34 +778,13 @@ export async function registerRoutes(
       const imageBytes = imagePart.inlineData.data;
 
       // Save to object storage
-      const privateObjectDir = objectStorageService.getPrivateObjectDir();
       const objectId = randomUUID();
-      const objectPath = `${privateObjectDir}/icons/${objectId}.png`;
-
-      // Parse bucket and object name
-      const pathParts = objectPath.split("/").filter(Boolean);
-      const bucketName = pathParts[0];
-      const objectName = pathParts.slice(1).join("/");
-
-      const bucket = objectStorageClient.bucket(bucketName);
-      const file = bucket.file(objectName);
-
-      // Upload the image
       const buffer = Buffer.from(imageBytes, "base64");
-      await file.save(buffer, {
-        contentType: "image/png",
-        metadata: {
-          contentType: "image/png",
-        },
-      });
-
-      // Set ACL to public
-      await objectStorageService.trySetObjectEntityAclPolicy(
-        `/objects/icons/${objectId}.png`,
-        { owner: "system", visibility: "public" }
+      const iconUrl = await objectStorageService.uploadBuffer(
+        buffer,
+        `icon-${objectId}.png`,
+        "image/png"
       );
-
-      const iconUrl = `/objects/icons/${objectId}.png`;
 
       res.json({ iconUrl });
     } catch (error) {
