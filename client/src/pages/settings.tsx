@@ -11,6 +11,7 @@ import { useToast } from "@/hooks/use-toast";
 import { fetchPrompts, savePrompt } from "@/lib/api";
 import { queryClient } from "@/lib/queryClient";
 import type { Prompt } from "@shared/schema";
+import { AdminLayout } from "@/components/admin-layout";
 
 const DEFAULT_EXPLANATION_PROMPT = `#命令書:   
 あなたは教育のスペシャリストであり、プロのwebエンジニアです。
@@ -215,7 +216,8 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="container max-w-4xl mx-auto py-8 px-4">
+    <AdminLayout title="AIプロンプト設定">
+    <div className="max-w-4xl mx-auto">
       <div className="mb-8">
         <h1 className="text-3xl font-bold">プロンプト設定</h1>
         <p className="text-muted-foreground mt-2">
@@ -417,5 +419,6 @@ export default function SettingsPage() {
         </TabsContent>
       </Tabs>
     </div>
+    </AdminLayout>
   );
 }

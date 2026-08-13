@@ -1,0 +1,25 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "ai-codex",
+  "main": "server/worker.ts",
+  "compatibility_date": "2026-08-13",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": "dist/public",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application"
+  },
+  "hyperdrive": [
+    {
+      "binding": "HYPERDRIVE",
+      "id": "f15413fb2ba34ddba35d914658f4de63"
+    }
+  ],
+  "vars": {
+    "DRIVE_IMAGES_FOLDER_ID": "1yt8C4ft3otFdGMbPLTQvZ0Zww_-c39A7",
+    "DRIVE_VIDEOS_FOLDER_ID": "1Oo1vTlx3ZaD2ThREL_gnY13Wm3PtP9g3"
+  },
+  "observability": {
+    "enabled": true
+  }
+}

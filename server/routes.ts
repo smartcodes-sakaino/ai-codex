@@ -1,9 +1,9 @@
 import type { Express } from "express";
-import { createServer, type Server } from "http";
 import { GoogleGenAI, Modality } from "@google/genai";
 import { storage } from "./storage";
 import { insertChapterSchema, insertProblemSchema, insertBlockSchema, insertPromptSchema } from "@shared/schema";
 import { registerObjectStorageRoutes, ObjectStorageService } from "./replit_integrations/object_storage";
+import { registerLmsRoutes } from "./lms/routes";
 import { z } from "zod";
 import { randomUUID } from "crypto";
 
@@ -146,12 +146,12 @@ function processTemplate(template: string, vars: Record<string, string | undefin
   return result;
 }
 
-export async function registerRoutes(
-  httpServer: Server,
-  app: Express
-): Promise<Server> {
+export async function registerRoutes(app: Express): Promise<void> {
   // Register object storage routes for file uploads
   registerObjectStorageRoutes(app);
+
+  // Register LMS routes (auth, admin, learner)
+  registerLmsRoutes(app);
 
   // ============================================
   // Chapter Routes
@@ -792,6 +792,4 @@ export async function registerRoutes(
       res.status(500).json({ error: "AIアイコンの生成に失敗しました" });
     }
   });
-
-  return httpServer;
 }

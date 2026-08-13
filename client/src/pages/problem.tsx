@@ -13,14 +13,16 @@ import {
   createSelfReviewLink,
   getSelfReviewLinkByProblemId,
 } from "@/lib/api";
-import type { Block, ProblemBlockContent, CodeBlockContent, TextBlockContent } from "@shared/schema";
+import type { Block, ProblemBlockContent, CodeBlockContent, TextBlockContent, VideoBlockContent } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { Breadcrumb } from "@/components/breadcrumb";
+import { AdminNavMenu } from "@/components/admin-nav-menu";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { HelpDialog, problemHelp } from "@/components/help-dialog";
 import { ProblemBlock } from "@/components/blocks/problem-block";
 import { CodeBlock } from "@/components/blocks/code-block";
 import { TextBlock } from "@/components/blocks/text-block";
+import { VideoBlock } from "@/components/blocks/video-block";
 import { AIReviewDialog } from "@/components/ai-review-dialog";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -71,7 +73,7 @@ export default function ProblemPage() {
   });
 
   const blocks = localBlocks ?? problemData?.blocks ?? [];
-  const [pendingUpdates, setPendingUpdates] = useState<Map<string, ProblemBlockContent | CodeBlockContent | TextBlockContent>>(new Map());
+  const [pendingUpdates, setPendingUpdates] = useState<Map<string, ProblemBlockContent | CodeBlockContent | TextBlockContent | VideoBlockContent>>(new Map());
 
   const createBlockMutation = useMutation({
     mutationFn: createBlock,
@@ -81,7 +83,7 @@ export default function ProblemPage() {
   });
 
   const updateBlockMutation = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: Partial<{ content: ProblemBlockContent | CodeBlockContent | TextBlockContent }> }) =>
+    mutationFn: ({ id, data }: { id: string; data: Partial<{ content: ProblemBlockContent | CodeBlockContent | TextBlockContent | VideoBlockContent }> }) =>
       updateBlock(id, data),
   });
 
@@ -101,14 +103,16 @@ export default function ProblemPage() {
     mutationFn: reorderBlocks,
   });
 
-  const handleAddBlock = (type: "problem" | "code" | "text") => {
+  const handleAddBlock = (type: "problem" | "code" | "text" | "video") => {
     if (!id) return;
 
-    let content: ProblemBlockContent | CodeBlockContent | TextBlockContent;
+    let content: ProblemBlockContent | CodeBlockContent | TextBlockContent | VideoBlockContent;
     if (type === "problem") {
       content = { text: "", images: [] };
     } else if (type === "code") {
       content = { code: "", language: "javascript" };
+    } else if (type === "video") {
+      content = { title: "", videoObjectPath: "", description: "" };
     } else {
       content = { text: "" };
     }
@@ -123,7 +127,7 @@ export default function ProblemPage() {
     if (!editMode) setEditMode(true);
   };
 
-  const handleUpdateBlock = (blockId: string, content: ProblemBlockContent | CodeBlockContent | TextBlockContent) => {
+  const handleUpdateBlock = (blockId: string, content: ProblemBlockContent | CodeBlockContent | TextBlockContent | VideoBlockContent) => {
     // Update local state only (no API call) to preserve cursor position
     setLocalBlocks(
       blocks.map((b) => (b.id === blockId ? { ...b, content } : b))
@@ -273,12 +277,15 @@ export default function ProblemPage() {
     <div className="min-h-screen bg-background pb-24">
       <header className="sticky top-0 z-50 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="container mx-auto px-4 h-16 flex items-center justify-between gap-4">
-          <Breadcrumb
-            items={[
-              { label: chapter.title, href: `/chapter/${chapter.id}` },
-              { label: problemData.title },
-            ]}
-          />
+          <div className="flex items-center gap-2 min-w-0">
+            <AdminNavMenu />
+            <Breadcrumb
+              items={[
+                { label: chapter.title, href: `/chapter/${chapter.id}` },
+                { label: problemData.title },
+              ]}
+            />
+          </div>
           <div className="flex items-center gap-1">
             <HelpDialog title={problemHelp.title} items={problemHelp.items} />
             <ThemeToggle />
@@ -360,6 +367,10 @@ export default function ProblemPage() {
                   <span className="text-blue-500 mr-2">■</span>
                   テキストブロック
                 </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleAddBlock("video")} data-testid="menu-add-video-block">
+                  <span className="text-purple-500 mr-2">■</span>
+                  動画ブロック
+                </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           )}
@@ -432,6 +443,21 @@ export default function ProblemPage() {
                     isLast={index === blocks.length - 1}
                     problemBlocks={problemBlocks}
                     codeBlocks={codeBlocks}
+                  />
+                );
+              }
+              if (block.type === "video") {
+                return (
+                  <VideoBlock
+                    key={block.id}
+                    block={block}
+                    editMode={editMode}
+                    onUpdate={(content) => handleUpdateBlock(block.id, content)}
+                    onDelete={() => setDeleteBlockId(block.id)}
+                    onMoveUp={() => handleMoveBlock(block.id, "up")}
+                    onMoveDown={() => handleMoveBlock(block.id, "down")}
+                    isFirst={index === 0}
+                    isLast={index === blocks.length - 1}
                   />
                 );
               }

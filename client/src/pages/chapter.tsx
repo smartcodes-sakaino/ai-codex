@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useParams, useLocation } from "wouter";
-import { Plus, Edit, FileText, Loader2 } from "lucide-react";
+import { Plus, Edit, FileText, Loader2, ChevronDown, FileVideo, X } from "lucide-react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient } from "@/lib/queryClient";
 import {
@@ -8,18 +8,24 @@ import {
   fetchProblems,
   fetchProblemWithBlocks,
   createProblem,
+  createBlock,
   updateProblem,
   deleteProblem,
   reorderProblems,
+  uploadFile,
 } from "@/lib/api";
-import type { Chapter, ProblemWithStatus } from "@shared/schema";
+import type { Chapter, ProblemWithStatus, VideoBlockContent } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Breadcrumb } from "@/components/breadcrumb";
 import { ProblemCard } from "@/components/problem-card";
+import { AdminNavMenu } from "@/components/admin-nav-menu";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { HelpDialog, chapterHelp } from "@/components/help-dialog";
+import { useToast } from "@/hooks/use-toast";
+import { VideoPlayer } from "@/components/video-player";
 import {
   Dialog,
   DialogContent,
@@ -28,6 +34,12 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -46,6 +58,17 @@ export default function ChapterPage() {
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [newProblemTitle, setNewProblemTitle] = useState("");
   const [deleteProblemId, setDeleteProblemId] = useState<string | null>(null);
+  const { toast } = useToast();
+
+  const [showAddElearningDialog, setShowAddElearningDialog] = useState(false);
+  const [elTitle, setElTitle] = useState("");
+  const [elDescription, setElDescription] = useState("");
+  const [elVideoPath, setElVideoPath] = useState("");
+  const [isUploadingVideo, setIsUploadingVideo] = useState(false);
+  const [videoError, setVideoError] = useState("");
+  const [isCreatingElearning, setIsCreatingElearning] = useState(false);
+  const videoInputRef = useRef<HTMLInputElement>(null);
+  const MAX_VIDEO_SIZE = 300 * 1024 * 1024; // 300MB
 
   const {
     data: chapter,
@@ -105,6 +128,61 @@ export default function ChapterPage() {
     });
   };
 
+  const handleVideoFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setVideoError("");
+    if (file.size > MAX_VIDEO_SIZE) {
+      setVideoError(`動画サイズが大きすぎます（${(file.size / 1024 / 1024).toFixed(1)}MB）。300MB以下の動画を選択してください。`);
+      return;
+    }
+
+    setIsUploadingVideo(true);
+    try {
+      const url = await uploadFile(file, "videos");
+      setElVideoPath(url);
+    } catch (error) {
+      console.error("Video upload error:", error);
+      setVideoError("動画のアップロードに失敗しました。");
+    } finally {
+      setIsUploadingVideo(false);
+    }
+  };
+
+  const resetElearningForm = () => {
+    setElTitle("");
+    setElDescription("");
+    setElVideoPath("");
+    setVideoError("");
+  };
+
+  const handleAddElearning = async () => {
+    if (!elTitle.trim() || !elVideoPath || !id) return;
+    setIsCreatingElearning(true);
+    try {
+      const problem = await createProblem({
+        chapterId: id,
+        title: elTitle.trim(),
+        order: problems.length,
+      });
+      const videoContent: VideoBlockContent = {
+        title: elTitle.trim(),
+        videoObjectPath: elVideoPath,
+        description: elDescription,
+      };
+      await createBlock({ problemId: problem.id, type: "video", content: videoContent, order: 0 });
+      queryClient.invalidateQueries({ queryKey: ["/api/chapters", id, "problems"] });
+      setShowAddElearningDialog(false);
+      resetElearningForm();
+    } catch (error) {
+      console.error("Failed to create e-learning content:", error);
+      toast({ title: "エラー", description: "e-learningコンテンツの作成に失敗しました。", variant: "destructive" });
+    } finally {
+      setIsCreatingElearning(false);
+    }
+  };
+
   const handleDeleteProblem = () => {
     if (deleteProblemId) {
       deleteProblemMutation.mutate(deleteProblemId);
@@ -161,7 +239,10 @@ export default function ChapterPage() {
     <div className="min-h-screen bg-background">
       <header className="sticky top-0 z-50 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="container mx-auto px-4 h-16 flex items-center justify-between gap-4">
-          <Breadcrumb items={[{ label: chapter.title }]} />
+          <div className="flex items-center gap-2 min-w-0">
+            <AdminNavMenu />
+            <Breadcrumb items={[{ label: chapter.title }]} />
+          </div>
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2">
               <Switch
@@ -184,14 +265,31 @@ export default function ChapterPage() {
       <main className="container mx-auto px-4 py-8">
         <div className="flex items-center justify-between mb-6 gap-4 flex-wrap">
           <h1 className="text-2xl font-bold">{chapter.title}</h1>
-          <Button
-            onClick={() => setShowAddDialog(true)}
-            className="bg-gradient-to-r from-[#FF8C42] to-[#FFA566] text-white"
-            data-testid="button-add-problem"
-          >
-            <Plus className="h-4 w-4 mr-2" />
-            問題を追加
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                className="bg-gradient-to-r from-[#FF8C42] to-[#FFA566] text-white"
+                data-testid="button-add-problem"
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                問題を追加
+                <ChevronDown className="h-4 w-4 ml-2" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent>
+              <DropdownMenuItem onClick={() => setShowAddDialog(true)} data-testid="menu-add-text-problem">
+                <FileText className="h-4 w-4 mr-2 text-orange-500" />
+                テキストコンテンツを追加
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => setShowAddElearningDialog(true)}
+                data-testid="menu-add-elearning"
+              >
+                <FileVideo className="h-4 w-4 mr-2 text-purple-500" />
+                e-learningを追加
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
 
         {problems.length === 0 ? (
@@ -256,6 +354,100 @@ export default function ChapterPage() {
               {createProblemMutation.isPending ? (
                 <Loader2 className="h-4 w-4 animate-spin mr-2" />
               ) : null}
+              追加
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={showAddElearningDialog}
+        onOpenChange={(open) => {
+          setShowAddElearningDialog(open);
+          if (!open) resetElearningForm();
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>e-learningを追加</DialogTitle>
+          </DialogHeader>
+          <div className="py-2 space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="el-title">タイトル</Label>
+              <Input
+                id="el-title"
+                value={elTitle}
+                onChange={(e) => setElTitle(e.target.value)}
+                placeholder="例: 第1回 変数とは"
+                data-testid="input-elearning-title"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>動画ファイル</Label>
+              {elVideoPath ? (
+                <div className="space-y-2">
+                  <VideoPlayer src={elVideoPath} title="動画プレビュー" />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setElVideoPath("")}
+                    className="text-destructive"
+                    data-testid="button-remove-elearning-video"
+                  >
+                    <X className="h-4 w-4 mr-1" />
+                    動画を削除
+                  </Button>
+                </div>
+              ) : (
+                <div
+                  className={`border-2 border-dashed border-muted-foreground/25 rounded-lg p-4 text-center cursor-pointer hover:border-muted-foreground/50 transition-colors ${isUploadingVideo ? "opacity-50 pointer-events-none" : ""}`}
+                  onClick={() => videoInputRef.current?.click()}
+                >
+                  {isUploadingVideo ? (
+                    <Loader2 className="h-8 w-8 mx-auto mb-2 text-muted-foreground animate-spin" />
+                  ) : (
+                    <FileVideo className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
+                  )}
+                  <p className="text-sm text-muted-foreground">
+                    {isUploadingVideo ? "アップロード中..." : "クリックして動画をアップロード（300MB以下）"}
+                  </p>
+                  <input
+                    ref={videoInputRef}
+                    type="file"
+                    accept="video/*"
+                    onChange={handleVideoFileChange}
+                    className="hidden"
+                    data-testid="input-elearning-video-upload"
+                  />
+                </div>
+              )}
+              {videoError && <p className="text-sm text-destructive">{videoError}</p>}
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="el-description">説明文</Label>
+              <Textarea
+                id="el-description"
+                value={elDescription}
+                onChange={(e) => setElDescription(e.target.value)}
+                placeholder="動画の説明を入力してください..."
+                className="min-h-[100px] resize-y"
+                data-testid="textarea-elearning-description"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowAddElearningDialog(false)}>
+              キャンセル
+            </Button>
+            <Button
+              onClick={handleAddElearning}
+              disabled={!elTitle.trim() || !elVideoPath || isCreatingElearning}
+              className="bg-gradient-to-r from-[#FF8C42] to-[#FFA566] text-white"
+              data-testid="button-confirm-add-elearning"
+            >
+              {isCreatingElearning ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
               追加
             </Button>
           </DialogFooter>

@@ -4,21 +4,52 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/hooks/use-theme";
+import { RequireRole } from "@/components/require-role";
 import Dashboard from "@/pages/dashboard";
 import ChapterPage from "@/pages/chapter";
 import ProblemPage from "@/pages/problem";
 import SettingsPage from "@/pages/settings";
 import SelfReviewPage from "@/pages/self-review";
 import NotFound from "@/pages/not-found";
+import LoginPage from "@/pages/login";
+import AdminDashboardPage from "@/pages/admin/dashboard";
+import AdminCoursesPage from "@/pages/admin/courses";
+import AdminMembersPage from "@/pages/admin/members";
+import AdminProgressPage from "@/pages/admin/progress";
+import AdminLmsSettingsPage from "@/pages/admin/lms-settings";
+import LearnerMyCoursesPage from "@/pages/learn/my-courses";
+import LearnerRoadmapPage from "@/pages/learn/roadmap";
+import LearnerProblemPage from "@/pages/learn/problem";
+import LearnerCertificatePage from "@/pages/learn/certificate";
 
 function Router() {
   return (
     <Switch>
-      <Route path="/" component={Dashboard} />
-      <Route path="/chapter/:id" component={ChapterPage} />
-      <Route path="/problem/:id" component={ProblemPage} />
-      <Route path="/settings" component={SettingsPage} />
+      <Route path="/login" component={LoginPage} />
       <Route path="/self-review/:token" component={SelfReviewPage} />
+
+      <Route path="/" component={() => <RequireRole role="admin"><Dashboard /></RequireRole>} />
+      <Route path="/chapter/:id" component={() => <RequireRole role="admin"><ChapterPage /></RequireRole>} />
+      <Route path="/problem/:id" component={() => <RequireRole role="admin"><ProblemPage /></RequireRole>} />
+      <Route path="/settings" component={() => <RequireRole role="admin"><SettingsPage /></RequireRole>} />
+
+      <Route path="/admin" component={() => <RequireRole role="admin"><AdminDashboardPage /></RequireRole>} />
+      <Route path="/admin/courses" component={() => <RequireRole role="admin"><AdminCoursesPage /></RequireRole>} />
+      <Route path="/admin/members" component={() => <RequireRole role="admin"><AdminMembersPage /></RequireRole>} />
+      <Route path="/admin/progress" component={() => <RequireRole role="admin"><AdminProgressPage /></RequireRole>} />
+      <Route path="/admin/settings" component={() => <RequireRole role="admin"><AdminLmsSettingsPage /></RequireRole>} />
+
+      <Route path="/learn" component={() => <RequireRole role="learner"><LearnerMyCoursesPage /></RequireRole>} />
+      <Route path="/learn/courses/:id" component={() => <RequireRole role="learner"><LearnerRoadmapPage /></RequireRole>} />
+      <Route
+        path="/learn/courses/:id/problems/:problemId"
+        component={() => <RequireRole role="learner"><LearnerProblemPage /></RequireRole>}
+      />
+      <Route
+        path="/learn/courses/:id/certificate"
+        component={() => <RequireRole role="learner"><LearnerCertificatePage /></RequireRole>}
+      />
+
       <Route component={NotFound} />
     </Switch>
   );

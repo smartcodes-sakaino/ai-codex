@@ -160,28 +160,30 @@ export async function getIconPrompt(data: {
 // File Upload API
 // ============================================
 
-export async function uploadFile(file: File): Promise<string> {
-  // Step 1: Request presigned URL
-  const urlResponse = await apiRequest("POST", "/api/uploads/request-url", {
+export async function uploadFile(file: File, folder: "images" | "videos" = "images"): Promise<string> {
+  // Uploaded through our own server (which then pushes the bytes to Drive)
+  // rather than PUT directly to Google's resumable URL, since Drive's upload
+  // endpoint does not allow direct browser uploads from arbitrary origins (CORS).
+  const params = new URLSearchParams({
     name: file.name,
-    size: file.size,
     contentType: file.type || "application/octet-stream",
+    folder,
   });
-  const { uploadURL, objectPath } = await urlResponse.json();
 
-  // Step 2: Upload file to presigned URL
-  const uploadResponse = await fetch(uploadURL, {
-    method: "PUT",
+  const response = await fetch(`/api/uploads/direct?${params.toString()}`, {
+    method: "POST",
     body: file,
     headers: {
       "Content-Type": file.type || "application/octet-stream",
     },
+    credentials: "include",
   });
 
-  if (!uploadResponse.ok) {
+  if (!response.ok) {
     throw new Error("Failed to upload file");
   }
 
+  const { objectPath } = await response.json();
   return objectPath;
 }
 

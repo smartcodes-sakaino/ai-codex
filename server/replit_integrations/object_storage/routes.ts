@@ -1,66 +1,48 @@
 import type { Express } from "express";
-import { ObjectStorageService, ObjectNotFoundError } from "./objectStorage";
+import express from "express";
+import { ObjectStorageService, ObjectNotFoundError, type UploadFolder } from "./objectStorage";
 
 /**
  * Register object storage routes for file uploads.
  *
- * This provides example routes for the presigned URL upload flow:
- * 1. POST /api/uploads/request-url - Get a presigned URL for uploading
- * 2. The client then uploads directly to the presigned URL
- *
- * IMPORTANT: These are example routes. Customize based on your use case:
- * - Add authentication middleware for protected uploads
- * - Add file metadata storage (save to database after upload)
- * - Add ACL policies for access control
+ * Uploads are proxied through this server rather than PUT directly from the
+ * browser to Google's resumable upload URL: Drive's upload endpoint does not
+ * send CORS headers for arbitrary origins, so a direct browser PUT is blocked.
  */
 export function registerObjectStorageRoutes(app: Express): void {
   const objectStorageService = new ObjectStorageService();
 
   /**
-   * Request a presigned URL for file upload.
+   * Upload a file's raw bytes directly to Drive via the server.
    *
-   * Request body (JSON):
-   * {
-   *   "name": "filename.jpg",
-   *   "size": 12345,
-   *   "contentType": "image/jpeg"
-   * }
-   *
-   * Response:
-   * {
-   *   "uploadURL": "https://storage.googleapis.com/...",
-   *   "objectPath": "/objects/uploads/uuid"
-   * }
-   *
-   * IMPORTANT: The client should NOT send the file to this endpoint.
-   * Send JSON metadata only, then upload the file directly to uploadURL.
+   * Query string: name (required), contentType, folder ("images" | "videos")
+   * Body: the raw file bytes.
    */
-  app.post("/api/uploads/request-url", async (req, res) => {
-    try {
-      const { name, size, contentType } = req.body;
+  app.post(
+    "/api/uploads/direct",
+    express.raw({ type: "*/*", limit: "300mb" }),
+    async (req, res) => {
+      try {
+        const name = typeof req.query.name === "string" ? req.query.name : "";
+        const contentType =
+          typeof req.query.contentType === "string" ? req.query.contentType : "application/octet-stream";
+        const folder: UploadFolder = req.query.folder === "videos" ? "videos" : "images";
 
-      if (!name) {
-        return res.status(400).json({
-          error: "Missing required field: name",
-        });
+        if (!name) {
+          return res.status(400).json({ error: "Missing required field: name" });
+        }
+        if (!Buffer.isBuffer(req.body) || req.body.length === 0) {
+          return res.status(400).json({ error: "Empty file body" });
+        }
+
+        const objectPath = await objectStorageService.uploadBuffer(req.body, name, contentType, { folder });
+        res.json({ objectPath });
+      } catch (error) {
+        console.error("Error uploading file:", error);
+        res.status(500).json({ error: "Failed to upload file" });
       }
-
-      const { uploadURL, objectPath } = await objectStorageService.getObjectEntityUploadURL(
-        name,
-        contentType || "application/octet-stream"
-      );
-
-      res.json({
-        uploadURL,
-        objectPath,
-        // Echo back the metadata for client convenience
-        metadata: { name, size, contentType },
-      });
-    } catch (error) {
-      console.error("Error generating upload URL:", error);
-      res.status(500).json({ error: "Failed to generate upload URL" });
     }
-  });
+  );
 
   /**
    * Serve uploaded objects.

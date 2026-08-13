@@ -1,16 +1,25 @@
 import { google } from "googleapis";
 import type { Response } from "express";
 import { Readable } from "stream";
+import { getCachedObject, setCachedObject } from "./objectCache";
 
-// The Drive client is used to interact with Google Drive.
-// Authenticates via Application Default Credentials: set GOOGLE_APPLICATION_CREDENTIALS
-// to the path of a Google Cloud service account key JSON file. The service account must
-// be added as a member of the shared Drive folder used for storage.
+// Shared Google auth for Drive (image/file storage) and Sheets (progress export).
+// Locally, this authenticates via Application Default Credentials: set
+// GOOGLE_APPLICATION_CREDENTIALS to the path of a Google Cloud service account key
+// JSON file. Environments without a filesystem (e.g. Cloudflare Workers) instead set
+// GOOGLE_SERVICE_ACCOUNT_JSON to the key file's raw contents. Either way, the service
+// account must be added as a member of the shared Drive folder used for storage.
+const serviceAccountJson = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
 const auth = new google.auth.GoogleAuth({
-  scopes: ["https://www.googleapis.com/auth/drive"],
+  scopes: [
+    "https://www.googleapis.com/auth/drive",
+    "https://www.googleapis.com/auth/spreadsheets",
+  ],
+  ...(serviceAccountJson ? { credentials: JSON.parse(serviceAccountJson) } : {}),
 });
 
 export const driveClient = google.drive({ version: "v3", auth });
+export const sheetsClient = google.sheets({ version: "v4", auth });
 
 export class ObjectNotFoundError extends Error {
   constructor() {
@@ -19,6 +28,8 @@ export class ObjectNotFoundError extends Error {
     Object.setPrototypeOf(this, ObjectNotFoundError.prototype);
   }
 }
+
+export type UploadFolder = "images" | "videos";
 
 function getImagesFolderId(): string {
   const folderId = process.env.DRIVE_IMAGES_FOLDER_ID || "";
@@ -31,6 +42,21 @@ function getImagesFolderId(): string {
   return folderId;
 }
 
+function getVideosFolderId(): string {
+  const folderId = process.env.DRIVE_VIDEOS_FOLDER_ID || "";
+  if (!folderId) {
+    throw new Error(
+      "DRIVE_VIDEOS_FOLDER_ID not set. Set it to the ID of the Google Drive folder " +
+        "used for storing videos (the folder ID from its share URL)."
+    );
+  }
+  return folderId;
+}
+
+function getFolderId(folder: UploadFolder): string {
+  return folder === "videos" ? getVideosFolderId() : getImagesFolderId();
+}
+
 // The object storage service stores files in a shared Google Drive folder.
 export class ObjectStorageService {
   constructor() {}
@@ -40,12 +66,12 @@ export class ObjectStorageService {
     buffer: Buffer,
     filename: string,
     mimeType: string,
-    options: { public?: boolean } = {}
+    options: { public?: boolean; folder?: UploadFolder } = {}
   ): Promise<string> {
     const fileId = await this.generateFileId();
 
     await driveClient.files.create({
-      requestBody: { id: fileId, name: filename, parents: [getImagesFolderId()] },
+      requestBody: { id: fileId, name: filename, parents: [getFolderId(options.folder ?? "images")] },
       media: { mimeType, body: Readable.from(buffer) },
       supportsAllDrives: true,
       fields: "id",
@@ -70,7 +96,8 @@ export class ObjectStorageService {
   // Starts a resumable upload session and returns a URL the client can PUT the file to directly.
   async getObjectEntityUploadURL(
     name: string,
-    contentType: string
+    contentType: string,
+    folder: UploadFolder = "images"
   ): Promise<{ uploadURL: string; objectPath: string }> {
     const fileId = await this.generateFileId();
 
@@ -86,7 +113,7 @@ export class ObjectStorageService {
           "Content-Type": "application/json; charset=UTF-8",
           "X-Upload-Content-Type": contentType,
         },
-        body: JSON.stringify({ id: fileId, name, parents: [getImagesFolderId()] }),
+        body: JSON.stringify({ id: fileId, name, parents: [getFolderId(folder)] }),
       }
     );
 
@@ -124,34 +151,47 @@ export class ObjectStorageService {
     return fileId;
   }
 
-  // Downloads an object to the response.
+  // Downloads an object to the response. Uses a bounded in-memory cache so repeat
+  // requests for the same file (chapter icons, certificates) skip Google Drive entirely.
   async downloadObject(fileId: string, res: Response, cacheTtlSec: number = 3600) {
     try {
-      const metadata = await driveClient.files.get({
-        fileId,
-        fields: "mimeType,size",
-        supportsAllDrives: true,
-      });
+      const cached = getCachedObject(fileId);
+      if (cached) {
+        res.set({
+          "Content-Type": cached.contentType,
+          "Content-Length": String(cached.buffer.length),
+          "Cache-Control": `public, max-age=${cacheTtlSec}`,
+        });
+        res.end(cached.buffer);
+        return;
+      }
 
-      res.set({
-        "Content-Type": metadata.data.mimeType || "application/octet-stream",
-        ...(metadata.data.size ? { "Content-Length": metadata.data.size } : {}),
-        "Cache-Control": `public, max-age=${cacheTtlSec}`,
-      });
-
-      const stream = await driveClient.files.get(
+      // A single request with alt=media returns both the file bytes and its
+      // Content-Type header, so no separate metadata lookup is needed.
+      const response = await driveClient.files.get(
         { fileId, alt: "media", supportsAllDrives: true },
         { responseType: "stream" }
       );
 
-      stream.data.on("error", (err: Error) => {
+      const contentType = (response.headers?.["content-type"] as string) || "application/octet-stream";
+      res.set({
+        "Content-Type": contentType,
+        "Cache-Control": `public, max-age=${cacheTtlSec}`,
+      });
+
+      const chunks: Buffer[] = [];
+      response.data.on("data", (chunk: Buffer) => chunks.push(chunk));
+      response.data.on("error", (err: Error) => {
         console.error("Stream error:", err);
         if (!res.headersSent) {
           res.status(500).json({ error: "Error streaming file" });
         }
       });
+      response.data.on("end", () => {
+        setCachedObject(fileId, { buffer: Buffer.concat(chunks), contentType });
+      });
 
-      stream.data.pipe(res);
+      response.data.pipe(res);
     } catch (error) {
       console.error("Error downloading file:", error);
       if (!res.headersSent) {
