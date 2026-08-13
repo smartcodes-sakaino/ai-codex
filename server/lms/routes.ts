@@ -40,7 +40,16 @@ export function registerLmsRoutes(app: Express): void {
       return res.status(401).json(genericError);
     }
     req.session.userId = user.id;
-    res.json({ id: user.id, name: user.name, email: user.email, role: user.role });
+    // Saved explicitly (rather than relying on the implicit save-on-response-end)
+    // so that a session store failure surfaces as an error instead of silently
+    // sending a Set-Cookie for a session that was never actually persisted.
+    req.session.save((err) => {
+      if (err) {
+        console.error("Session save error:", err);
+        return res.status(500).json({ error: "セッションの保存に失敗しました" });
+      }
+      res.json({ id: user.id, name: user.name, email: user.email, role: user.role });
+    });
   });
 
   app.post("/api/auth/logout", (req, res) => {

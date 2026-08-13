@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { useAuth } from "@/hooks/use-auth";
+import mascotGraduate from "@assets/mascot-graduate.png";
 
 export default function LoginPage() {
   const { user, isLoading, login } = useAuth();
@@ -39,10 +40,15 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
       <Card className="w-full max-w-sm">
         <CardHeader className="text-center">
-          <div className="w-12 h-12 rounded-xl bg-gradient-to-r from-[#FF8C42] to-[#FFA566] flex items-center justify-center text-white font-bold text-lg mx-auto mb-2">
-            AC
-          </div>
-          <CardTitle>AI Codex</CardTitle>
+          <img
+            src={mascotGraduate}
+            alt="Codey mascot"
+            className="h-14 w-14 object-contain mx-auto mb-2"
+            data-testid="img-mascot"
+          />
+          <CardTitle className="bg-gradient-to-r from-[#FF8C42] via-[#FF6B9D] to-[#4A90E2] bg-clip-text text-transparent">
+            AI Codex
+          </CardTitle>
           <CardDescription>メールアドレスとパスワードでログインしてください</CardDescription>
         </CardHeader>
         <CardContent>
