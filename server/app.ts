@@ -28,6 +28,16 @@ export function log(message: string, source = "express") {
 export async function createApp() {
   const app = express();
 
+  // Both Replit and Cloudflare Workers put a reverse proxy in front of this app,
+  // terminating TLS themselves and forwarding to us over plain HTTP with an
+  // X-Forwarded-Proto header. Without "trust proxy", Express doesn't honor that
+  // header, so it sees every request as insecure — and express-session silently
+  // refuses to ever set the session cookie when cookie.secure is true, since it
+  // thinks the connection isn't HTTPS. This is what allows login to "succeed"
+  // (the response body is correct) while every subsequent request still comes
+  // back unauthenticated, because no session cookie was ever issued.
+  app.set("trust proxy", 1);
+
   const PgSession = connectPgSimple(session);
   app.use(
     session({
