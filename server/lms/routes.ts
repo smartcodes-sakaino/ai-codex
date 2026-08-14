@@ -367,6 +367,6 @@ export function registerLmsRoutes(app: Express): void {
       return res.status(404).json({ error: "修了証が見つかりません" });
     }
     const fileId = await objectStorageService.getObjectEntityFile(cert.pdfObjectPath);
-    await objectStorageService.downloadObject(fileId, res);
+    await objectStorageService.downloadObject(fileId, req, res);
   });
 }

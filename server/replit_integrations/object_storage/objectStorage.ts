@@ -1,7 +1,33 @@
 import { google } from "googleapis";
-import type { Response } from "express";
+import type { Request, Response } from "express";
 import { Readable } from "stream";
 import { getCachedObject, setCachedObject } from "./objectCache";
+
+// Parses a single-range "bytes=start-end" Range header against a known total
+// length. Returns null for anything we don't recognize (multi-range, unit
+// other than bytes, unsatisfiable range) so the caller can fall back to a
+// full response.
+function parseByteRange(rangeHeader: string, totalLength: number): { start: number; end: number } | null {
+  const match = /^bytes=(\d*)-(\d*)$/.exec(rangeHeader.trim());
+  if (!match) return null;
+  const [, startStr, endStr] = match;
+  if (!startStr && !endStr) return null;
+
+  let start: number;
+  let end: number;
+  if (!startStr) {
+    // Suffix range: "bytes=-500" means the last 500 bytes.
+    const suffixLength = parseInt(endStr, 10);
+    start = Math.max(totalLength - suffixLength, 0);
+    end = totalLength - 1;
+  } else {
+    start = parseInt(startStr, 10);
+    end = endStr ? parseInt(endStr, 10) : totalLength - 1;
+  }
+
+  if (Number.isNaN(start) || Number.isNaN(end) || start > end || start >= totalLength) return null;
+  return { start, end: Math.min(end, totalLength - 1) };
+}
 
 // Shared Google auth for Drive (image/file storage) and Sheets (progress export).
 // Locally, this authenticates via Application Default Credentials: set
@@ -153,50 +179,89 @@ export class ObjectStorageService {
 
   // Downloads an object to the response. Uses a bounded in-memory cache so repeat
   // requests for the same file (chapter icons, certificates) skip Google Drive entirely.
-  async downloadObject(fileId: string, res: Response, cacheTtlSec: number = 3600) {
+  //
+  // Honors Range requests: <video> playback depends on it — browsers probe with
+  // a Range request before they'll play a file at all, not just for seeking.
+  async downloadObject(fileId: string, req: Request, res: Response, cacheTtlSec: number = 3600) {
     try {
+      const rangeHeader = req.headers.range;
+
       const cached = getCachedObject(fileId);
       if (cached) {
+        const { buffer, contentType } = cached;
+        const range = typeof rangeHeader === "string" ? parseByteRange(rangeHeader, buffer.length) : null;
+        if (range) {
+          res.status(206).set({
+            "Content-Type": contentType,
+            "Content-Range": `bytes ${range.start}-${range.end}/${buffer.length}`,
+            "Content-Length": String(range.end - range.start + 1),
+            "Accept-Ranges": "bytes",
+            "Cache-Control": `public, max-age=${cacheTtlSec}`,
+          });
+          res.end(buffer.subarray(range.start, range.end + 1));
+          return;
+        }
         res.set({
-          "Content-Type": cached.contentType,
-          "Content-Length": String(cached.buffer.length),
+          "Content-Type": contentType,
+          "Content-Length": String(buffer.length),
+          "Accept-Ranges": "bytes",
           "Cache-Control": `public, max-age=${cacheTtlSec}`,
         });
-        res.end(cached.buffer);
+        res.end(buffer);
         return;
       }
 
       // A single request with alt=media returns both the file bytes and its
-      // Content-Type header, so no separate metadata lookup is needed.
+      // Content-Type header, so no separate metadata lookup is needed. The Drive
+      // API also honors a forwarded Range header, returning 206 + Content-Range
+      // itself — we just relay whatever it sends back.
       const response = await driveClient.files.get(
         { fileId, alt: "media", supportsAllDrives: true },
-        { responseType: "stream" }
+        {
+          responseType: "stream",
+          headers: typeof rangeHeader === "string" ? { Range: rangeHeader } : undefined,
+        }
       );
 
       // googleapis' fetch-based transport returns a Headers instance here, not
       // a plain object — bracket access silently returns undefined, which was
       // causing every download to fall back to application/octet-stream.
       const rawHeaders = response.headers as unknown;
-      const contentType =
-        (typeof (rawHeaders as Headers)?.get === "function"
-          ? (rawHeaders as Headers).get("content-type")
-          : (rawHeaders as Record<string, string>)?.["content-type"]) || "application/octet-stream";
+      const getHeader = (name: string): string | null =>
+        typeof (rawHeaders as Headers)?.get === "function"
+          ? (rawHeaders as Headers).get(name)
+          : ((rawHeaders as Record<string, string> | undefined)?.[name] ?? null);
+
+      const contentType = getHeader("content-type") || "application/octet-stream";
+      const isPartial = response.status === 206;
+
+      res.status(response.status ?? 200);
       res.set({
         "Content-Type": contentType,
+        "Accept-Ranges": "bytes",
         "Cache-Control": `public, max-age=${cacheTtlSec}`,
       });
+      const contentRange = getHeader("content-range");
+      if (contentRange) res.set("Content-Range", contentRange);
+      const contentLength = getHeader("content-length");
+      if (contentLength) res.set("Content-Length", contentLength);
 
-      const chunks: Buffer[] = [];
-      response.data.on("data", (chunk: Buffer) => chunks.push(chunk));
       response.data.on("error", (err: Error) => {
         console.error("Stream error:", err);
         if (!res.headersSent) {
           res.status(500).json({ error: "Error streaming file" });
         }
       });
-      response.data.on("end", () => {
-        setCachedObject(fileId, { buffer: Buffer.concat(chunks), contentType });
-      });
+
+      // Only full (non-partial) responses represent the whole file, so only
+      // those are safe to cache.
+      if (!isPartial) {
+        const chunks: Buffer[] = [];
+        response.data.on("data", (chunk: Buffer) => chunks.push(chunk));
+        response.data.on("end", () => {
+          setCachedObject(fileId, { buffer: Buffer.concat(chunks), contentType });
+        });
+      }
 
       response.data.pipe(res);
     } catch (error) {
