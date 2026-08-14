@@ -173,7 +173,14 @@ export class ObjectStorageService {
         { responseType: "stream" }
       );
 
-      const contentType = (response.headers?.["content-type"] as string) || "application/octet-stream";
+      // googleapis' fetch-based transport returns a Headers instance here, not
+      // a plain object — bracket access silently returns undefined, which was
+      // causing every download to fall back to application/octet-stream.
+      const rawHeaders = response.headers as unknown;
+      const contentType =
+        (typeof (rawHeaders as Headers)?.get === "function"
+          ? (rawHeaders as Headers).get("content-type")
+          : (rawHeaders as Record<string, string>)?.["content-type"]) || "application/octet-stream";
       res.set({
         "Content-Type": contentType,
         "Cache-Control": `public, max-age=${cacheTtlSec}`,

@@ -160,10 +160,24 @@ export async function getIconPrompt(data: {
 // File Upload API
 // ============================================
 
+// Above this size, upload in chunks instead: hosting front proxies (Replit,
+// Cloudflare) reject request bodies past roughly 32MB with a 413, so a
+// single-shot upload silently caps out well below what a real video needs.
+const DIRECT_UPLOAD_MAX_BYTES = 15 * 1024 * 1024;
+// Must be a multiple of 256KB per Drive's resumable-upload chunk requirement.
+const CHUNK_SIZE_BYTES = 8 * 1024 * 1024;
+
 export async function uploadFile(file: File, folder: "images" | "videos" = "images"): Promise<string> {
-  // Uploaded through our own server (which then pushes the bytes to Drive)
-  // rather than PUT directly to Google's resumable URL, since Drive's upload
-  // endpoint does not allow direct browser uploads from arbitrary origins (CORS).
+  if (file.size <= DIRECT_UPLOAD_MAX_BYTES) {
+    return uploadFileDirect(file, folder);
+  }
+  return uploadFileChunked(file, folder);
+}
+
+// Uploaded through our own server (which then pushes the bytes to Drive)
+// rather than PUT directly to Google's resumable URL, since Drive's upload
+// endpoint does not allow direct browser uploads from arbitrary origins (CORS).
+async function uploadFileDirect(file: File, folder: "images" | "videos"): Promise<string> {
   const params = new URLSearchParams({
     name: file.name,
     contentType: file.type || "application/octet-stream",
@@ -184,6 +198,44 @@ export async function uploadFile(file: File, folder: "images" | "videos" = "imag
   }
 
   const { objectPath } = await response.json();
+  return objectPath;
+}
+
+// Opens a resumable upload session on the server (which talks to Drive), then
+// streams the file to it in fixed-size chunks so no single request is large
+// enough to be rejected by a front proxy's body-size limit.
+async function uploadFileChunked(file: File, folder: "images" | "videos"): Promise<string> {
+  const startRes = await apiRequest("POST", "/api/uploads/session/start", {
+    name: file.name,
+    contentType: file.type || "application/octet-stream",
+    folder,
+  });
+  const { sessionId, objectPath } = await startRes.json();
+
+  let offset = 0;
+  while (offset < file.size) {
+    const end = Math.min(offset + CHUNK_SIZE_BYTES, file.size);
+    const chunk = file.slice(offset, end);
+    const response = await fetch(`/api/uploads/session/${sessionId}/chunk`, {
+      method: "PUT",
+      body: chunk,
+      headers: {
+        "Content-Range": `bytes ${offset}-${end - 1}/${file.size}`,
+        // Blob.slice() drops the source File's MIME type, so without this the
+        // browser sends no Content-Type header at all and express.raw's type
+        // matcher never fires, leaving req.body empty on the server.
+        "Content-Type": "application/octet-stream",
+      },
+      credentials: "include",
+    });
+
+    if (response.status !== 308 && !response.ok) {
+      throw new Error("Failed to upload file");
+    }
+
+    offset = end;
+  }
+
   return objectPath;
 }
 
