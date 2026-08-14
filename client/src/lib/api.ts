@@ -167,7 +167,7 @@ const DIRECT_UPLOAD_MAX_BYTES = 15 * 1024 * 1024;
 // Must be a multiple of 256KB per Drive's resumable-upload chunk requirement.
 const CHUNK_SIZE_BYTES = 8 * 1024 * 1024;
 
-export async function uploadFile(file: File, folder: "images" | "videos" = "images"): Promise<string> {
+export async function uploadFile(file: File, folder: "images" | "videos" | "files" = "images"): Promise<string> {
   if (file.size <= DIRECT_UPLOAD_MAX_BYTES) {
     return uploadFileDirect(file, folder);
   }
@@ -177,7 +177,7 @@ export async function uploadFile(file: File, folder: "images" | "videos" = "imag
 // Uploaded through our own server (which then pushes the bytes to Drive)
 // rather than PUT directly to Google's resumable URL, since Drive's upload
 // endpoint does not allow direct browser uploads from arbitrary origins (CORS).
-async function uploadFileDirect(file: File, folder: "images" | "videos"): Promise<string> {
+async function uploadFileDirect(file: File, folder: "images" | "videos" | "files"): Promise<string> {
   const params = new URLSearchParams({
     name: file.name,
     contentType: file.type || "application/octet-stream",
@@ -204,7 +204,7 @@ async function uploadFileDirect(file: File, folder: "images" | "videos"): Promis
 // Opens a resumable upload session on the server (which talks to Drive), then
 // streams the file to it in fixed-size chunks so no single request is large
 // enough to be rejected by a front proxy's body-size limit.
-async function uploadFileChunked(file: File, folder: "images" | "videos"): Promise<string> {
+async function uploadFileChunked(file: File, folder: "images" | "videos" | "files"): Promise<string> {
   const startRes = await apiRequest("POST", "/api/uploads/session/start", {
     name: file.name,
     contentType: file.type || "application/octet-stream",
@@ -286,7 +286,7 @@ export async function getSelfReviewInfo(token: string): Promise<{ problemTitle: 
   return response.json();
 }
 
-export async function submitSelfReview(data: { token: string; reviewCode: string }): Promise<{ review: string }> {
+export async function submitSelfReview(data: { token: string; reviewCode: string }): Promise<{ review: string; verdict: "pass" | "fail" }> {
   const response = await apiRequest("POST", "/api/ai/self-review", data);
   return response.json();
 }

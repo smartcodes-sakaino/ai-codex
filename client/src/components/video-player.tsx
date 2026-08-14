@@ -15,12 +15,14 @@ interface VideoPlayerProps {
   initialTime?: number;
   /** Called periodically while playing, on pause, and when the component unmounts. Reports the furthest position reached, never a rewound one. */
   onProgress?: (seconds: number) => void;
+  /** Called once the video has played through to the end. */
+  onComplete?: () => void;
 }
 
 // A deliberately restricted player: no visible seek bar, no playback-speed control,
 // and forward seeking beyond the furthest-watched point is blocked. This exists for
 // e-learning content where actual watch time must be genuine (subsidy/grant reporting).
-export function VideoPlayer({ src, title, className, initialTime, onProgress }: VideoPlayerProps) {
+export function VideoPlayer({ src, title, className, initialTime, onProgress, onComplete }: VideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
@@ -30,6 +32,8 @@ export function VideoPlayer({ src, title, className, initialTime, onProgress }: 
   const lastReportRef = useRef(0);
   const onProgressRef = useRef(onProgress);
   onProgressRef.current = onProgress;
+  const onCompleteRef = useRef(onComplete);
+  onCompleteRef.current = onComplete;
 
   useEffect(() => {
     hasSeekedRef.current = false;
@@ -93,6 +97,17 @@ export function VideoPlayer({ src, title, className, initialTime, onProgress }: 
     reportProgress(false);
   };
 
+  const handleEnded = () => {
+    const video = videoRef.current;
+    if (video && video.duration) {
+      maxTimeRef.current = Math.max(maxTimeRef.current, video.duration);
+      setProgressPct(100);
+    }
+    setIsPlaying(false);
+    reportProgress(true);
+    onCompleteRef.current?.();
+  };
+
   const togglePlay = () => {
     const video = videoRef.current;
     if (!video) return;
@@ -131,6 +146,7 @@ export function VideoPlayer({ src, title, className, initialTime, onProgress }: 
             setIsPlaying(false);
             reportProgress(true);
           }}
+          onEnded={handleEnded}
           onClick={togglePlay}
           data-testid="video-player-element"
         />

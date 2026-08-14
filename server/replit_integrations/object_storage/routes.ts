@@ -10,6 +10,11 @@ import { ObjectStorageService, ObjectNotFoundError, type UploadFolder } from "./
 // single hop ever needs to carry more than a few MB.
 const DIRECT_UPLOAD_LIMIT = "20mb";
 
+function parseUploadFolder(value: unknown): UploadFolder {
+  if (value === "videos" || value === "files") return value;
+  return "images";
+}
+
 // sessionId -> Drive's resumable upload URL for that in-progress upload.
 // Session state is only meaningful within a single server process; that's
 // fine for a single-instance deployment, and uploads are short-lived enough
@@ -42,7 +47,7 @@ export function registerObjectStorageRoutes(app: Express): void {
         const name = typeof req.query.name === "string" ? req.query.name : "";
         const contentType =
           typeof req.query.contentType === "string" ? req.query.contentType : "application/octet-stream";
-        const folder: UploadFolder = req.query.folder === "videos" ? "videos" : "images";
+        const folder: UploadFolder = parseUploadFolder(req.query.folder);
 
         if (!name) {
           return res.status(400).json({ error: "Missing required field: name" });
@@ -72,7 +77,7 @@ export function registerObjectStorageRoutes(app: Express): void {
       if (!name || typeof name !== "string") {
         return res.status(400).json({ error: "Missing required field: name" });
       }
-      const uploadFolder: UploadFolder = folder === "videos" ? "videos" : "images";
+      const uploadFolder: UploadFolder = parseUploadFolder(folder);
       const { uploadURL, objectPath } = await objectStorageService.getObjectEntityUploadURL(
         name,
         typeof contentType === "string" ? contentType : "application/octet-stream",

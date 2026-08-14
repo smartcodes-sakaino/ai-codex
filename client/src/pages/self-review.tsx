@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { getSelfReviewInfo, submitSelfReview } from "@/lib/api";
+import { queryClient } from "@/lib/queryClient";
 import { ThemeToggle } from "@/components/theme-toggle";
 import ReactMarkdown from "react-markdown";
 
@@ -47,6 +48,7 @@ export default function SelfReviewPage() {
     { id: crypto.randomUUID(), filename: "", language: "javascript", code: "" }
   ]);
   const [review, setReview] = useState("");
+  const [verdict, setVerdict] = useState<"pass" | "fail" | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
@@ -201,6 +203,11 @@ export default function SelfReviewPage() {
     try {
       const result = await submitSelfReview({ token: token!, reviewCode });
       setReview(result.review);
+      setVerdict(result.verdict);
+      // If this was opened by a logged-in learner, the server also recorded a
+      // gating submission — refresh any cached roadmap/course-progress data so
+      // a newly-unlocked next step shows up without a manual reload.
+      queryClient.invalidateQueries({ queryKey: ["/api/my/courses"] });
     } catch (err) {
       console.error("Self review error:", err);
       setError("セルフレビューの生成に失敗しました。もう一度お試しください。");
@@ -222,6 +229,7 @@ export default function SelfReviewPage() {
   const handleReset = () => {
     setCodeEntries([{ id: crypto.randomUUID(), filename: "", language: "javascript", code: "" }]);
     setReview("");
+    setVerdict(null);
     setError("");
   };
 
@@ -455,6 +463,20 @@ export default function SelfReviewPage() {
                 </Button>
               </div>
             </div>
+
+            {verdict && (
+              <div
+                className={
+                  "rounded-md px-4 py-3 font-bold text-sm " +
+                  (verdict === "pass"
+                    ? "bg-[#E3F5E6] text-[#2F9E44]"
+                    : "bg-[#FDECEC] text-[#E03131]")
+                }
+                data-testid="text-self-review-verdict"
+              >
+                {verdict === "pass" ? "✓ 判定: 合格" : "✕ 判定: 不合格"}
+              </div>
+            )}
 
             <div className="prose prose-sm dark:prose-invert max-w-none p-4 bg-muted/50 rounded-md">
               <ReactMarkdown>{review}</ReactMarkdown>

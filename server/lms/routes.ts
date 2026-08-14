@@ -11,9 +11,9 @@ import {
 } from "@shared/schema";
 import { lmsStorage } from "./storage";
 import { hashPassword, verifyPassword, generateTempPassword, requireAuth, requireRole, type AuthedRequest } from "./auth";
-import { getRoadmap, getCourseProgress, assertProblemIsCurrent } from "./roadmap";
+import { getRoadmap, getCourseProgress, assertProblemIsCurrent, checkAndIssueCertificatesForProblem } from "./roadmap";
 import { runLmsCheck, AiUnavailableError } from "./aiCheck";
-import { issueCertificateIfNeeded, objectStorageService } from "./certificate";
+import { objectStorageService } from "./certificate";
 import { exportCourseProgress } from "./export";
 import { storage } from "../storage";
 
@@ -313,14 +313,10 @@ export function registerLmsRoutes(app: Express): void {
 
       let certificateIssued = false;
       if (result.verdict === "pass") {
-        const progress = await getCourseProgress(userId, courseId);
-        if (progress.complete) {
-          const course = await lmsStorage.getCourse(courseId);
-          if (course) {
-            await issueCertificateIfNeeded(userId, courseId, course.title, req.user!.name);
-            certificateIssued = true;
-          }
-        }
+        const progressBefore = await lmsStorage.getCertificate(userId, courseId);
+        await checkAndIssueCertificatesForProblem(userId, problemId, req.user!.name);
+        const progressAfter = await lmsStorage.getCertificate(userId, courseId);
+        certificateIssued = !progressBefore && !!progressAfter;
       }
 
       res.json({ ...result, certificateIssued });
@@ -352,12 +348,22 @@ export function registerLmsRoutes(app: Express): void {
       if (!parsed.success) {
         return res.status(400).json({ error: parsed.error.errors[0]?.message || "入力が無効です" });
       }
+      const blockId = req.params.blockId as string;
       const progress = await lmsStorage.upsertVideoProgress(
         req.user!.id,
-        (req.params.blockId as string),
-        Math.floor(parsed.data.positionSeconds)
+        blockId,
+        Math.floor(parsed.data.positionSeconds),
+        parsed.data.completed
       );
-      res.json({ positionSeconds: progress.positionSeconds });
+
+      if (progress.completed) {
+        const block = await storage.getBlock(blockId);
+        if (block) {
+          await checkAndIssueCertificatesForProblem(req.user!.id, block.problemId, req.user!.name);
+        }
+      }
+
+      res.json({ positionSeconds: progress.positionSeconds, completed: progress.completed });
     }
   );
 

@@ -1,15 +1,16 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams, Link, useLocation } from "wouter";
+import ReactMarkdown from "react-markdown";
 import { LearnerLayout } from "@/components/learner-layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { Loader2 } from "lucide-react";
+import { Loader2, FileArchive, ClipboardCheck } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient } from "@/lib/queryClient";
-import { fetchProblemWithBlocks } from "@/lib/api";
+import { fetchProblemWithBlocks, getSelfReviewLinkByProblemId } from "@/lib/api";
 import {
   fetchMyRoadmap,
   fetchMySubmissions,
@@ -19,7 +20,7 @@ import {
   type Submission,
 } from "@/lib/lmsApi";
 import { VideoPlayer } from "@/components/video-player";
-import type { Block, ProblemBlockContent, VideoBlockContent } from "@shared/schema";
+import type { Block, ProblemBlockContent, VideoBlockContent, LessonBlockContent, FileBlockContent } from "@shared/schema";
 
 export default function LearnerProblemPage() {
   const { id: courseId, problemId } = useParams<{ id: string; problemId: string }>();
@@ -76,6 +77,8 @@ export default function LearnerProblemPage() {
     },
   });
 
+  const lessonBlocks = problem?.blocks.filter((b) => b.type === "lesson") ?? [];
+  const fileBlocks = problem?.blocks.filter((b) => b.type === "file") ?? [];
   const videoBlocks = problem?.blocks.filter((b) => b.type === "video") ?? [];
 
   const description =
@@ -85,12 +88,32 @@ export default function LearnerProblemPage() {
       .filter(Boolean)
       .join("\n\n") || "";
 
+  const { data: selfReviewLink } = useQuery({
+    queryKey: ["/api/self-review-links/problem", problemId],
+    queryFn: () => getSelfReviewLinkByProblemId(problemId!),
+    enabled: !!problemId,
+  });
+
   const passed = lastResult?.verdict === "pass";
   const currentIndex = roadmap.findIndex((r) => r.problemId === problemId);
   const nextItem = roadmap[currentIndex + 1];
+  const gate = roadmap[currentIndex]?.gate;
+  // Whether *this specific problem* is actually cleared — driven by whichever
+  // gate applies (self-review / video / submission), not just the last code
+  // submission's own verdict, since a passing submission doesn't unlock
+  // anything when the real gate is a self-review or a fully-watched video.
+  const canAdvance = roadmap[currentIndex]?.status === "done";
 
   return (
     <LearnerLayout title={problem?.title || "問題"} backHref={`/learn/courses/${courseId}`} backLabel="ロードマップへ">
+      {lessonBlocks.length > 0 && (
+        <div className="space-y-4 mb-5">
+          {lessonBlocks.map((b) => (
+            <LearnerLessonBlock key={b.id} block={b} />
+          ))}
+        </div>
+      )}
+
       <div className="grid md:grid-cols-2 gap-5 items-start">
         <Card>
           <CardHeader>
@@ -98,10 +121,17 @@ export default function LearnerProblemPage() {
           </CardHeader>
           <CardContent>
             {videoBlocks.map((b) => (
-              <LearnerVideoBlock key={b.id} block={b} />
+              <LearnerVideoBlock key={b.id} block={b} courseId={courseId} />
             ))}
             {description && (
               <p className="text-sm whitespace-pre-wrap leading-relaxed mb-4">{description}</p>
+            )}
+            {fileBlocks.length > 0 && (
+              <div className="space-y-2 mb-4">
+                {fileBlocks.map((b) => (
+                  <LearnerFileBlock key={b.id} block={b} />
+                ))}
+              </div>
             )}
             <div className="space-y-2">
               <Label>回答コード</Label>
@@ -114,6 +144,13 @@ export default function LearnerProblemPage() {
                 data-testid="textarea-answer-code"
               />
             </div>
+            {gate && gate !== "submission" && (
+              <p className="text-xs text-muted-foreground mt-2">
+                {gate === "self_review"
+                  ? "この問題は下のセルフレビューに合格すると次に進めます。コード提出は任意の練習です。"
+                  : "この問題は動画を最後まで視聴すると次に進めます。コード提出は任意の練習です。"}
+              </p>
+            )}
             <div className="flex items-center gap-3 mt-3">
               <Button
                 className="bg-gradient-to-r from-[#FF8C42] to-[#FFA566] text-white"
@@ -156,7 +193,7 @@ export default function LearnerProblemPage() {
                 <FeedbackSection title="改善点" text={lastResult.aiImprove} />
                 <FeedbackSection title="修正が必要な点" text={lastResult.aiMustFix} />
 
-                {passed &&
+                {canAdvance &&
                   (nextItem ? (
                     <Link href={`/learn/courses/${courseId}/problems/${nextItem.problemId}`}>
                       <Button className="mt-2 bg-gradient-to-r from-[#FF8C42] to-[#FFA566] text-white" data-testid="button-next-problem">
@@ -177,12 +214,68 @@ export default function LearnerProblemPage() {
           </CardContent>
         </Card>
       </div>
+
+      {selfReviewLink && (
+        <Card className="mt-5">
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <ClipboardCheck className="h-4 w-4" />
+              セルフレビュー
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-muted-foreground mb-3">
+              コードを提出してAIによるセルフレビューを受けましょう。
+              {gate === "self_review" && "合格すると次に進めます。"}
+            </p>
+            <Link href={`/self-review/${selfReviewLink.token}`}>
+              <Button variant="outline" className="gap-2" data-testid="button-go-to-self-review">
+                <ClipboardCheck className="h-4 w-4" />
+                セルフレビューを行う
+              </Button>
+            </Link>
+          </CardContent>
+        </Card>
+      )}
     </LearnerLayout>
   );
 }
 
-function LearnerVideoBlock({ block }: { block: Block }) {
+function LearnerLessonBlock({ block }: { block: Block }) {
+  const content = block.content as LessonBlockContent;
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">{content.title || "授業"}</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="prose prose-sm dark:prose-invert max-w-none prose-img:rounded-lg">
+          <ReactMarkdown>{content.markdown || ""}</ReactMarkdown>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function LearnerFileBlock({ block }: { block: Block }) {
+  const content = block.content as FileBlockContent;
+  if (!content.fileObjectPath) return null;
+  return (
+    <a
+      href={content.fileObjectPath}
+      download={content.fileName}
+      className="flex items-center gap-2 text-sm rounded-md border p-3 hover-elevate"
+      data-testid={`link-download-file-${block.id}`}
+    >
+      <FileArchive className="h-4 w-4 flex-shrink-0" />
+      <span className="truncate">{content.title || content.fileName || "ファイルをダウンロード"}</span>
+    </a>
+  );
+}
+
+function LearnerVideoBlock({ block, courseId }: { block: Block; courseId?: string }) {
   const v = block.content as VideoBlockContent;
+  const lastPositionRef = useRef(0);
 
   const { data: initialTime } = useQuery({
     queryKey: ["/api/my/video-progress", block.id],
@@ -198,7 +291,16 @@ function LearnerVideoBlock({ block }: { block: Block }) {
           title={v.title}
           initialTime={initialTime}
           onProgress={(seconds) => {
+            lastPositionRef.current = seconds;
             saveVideoProgress(block.id, seconds).catch((err) => console.error("Failed to save video progress:", err));
+          }}
+          onComplete={() => {
+            saveVideoProgress(block.id, lastPositionRef.current, true)
+              .then(() => {
+                queryClient.invalidateQueries({ queryKey: ["/api/my/courses", courseId, "roadmap"] });
+                queryClient.invalidateQueries({ queryKey: ["/api/my/courses"] });
+              })
+              .catch((err) => console.error("Failed to save video completion:", err));
           }}
         />
       )}

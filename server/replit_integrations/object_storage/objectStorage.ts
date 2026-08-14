@@ -77,7 +77,7 @@ export class ObjectNotFoundError extends Error {
   }
 }
 
-export type UploadFolder = "images" | "videos";
+export type UploadFolder = "images" | "videos" | "files";
 
 function getImagesFolderId(): string {
   const folderId = process.env.DRIVE_IMAGES_FOLDER_ID || "";
@@ -101,8 +101,21 @@ function getVideosFolderId(): string {
   return folderId;
 }
 
+function getFilesFolderId(): string {
+  const folderId = process.env.DRIVE_FILES_FOLDER_ID || "";
+  if (!folderId) {
+    throw new Error(
+      "DRIVE_FILES_FOLDER_ID not set. Set it to the ID of the Google Drive folder " +
+        "used for storing downloadable attachments (the folder ID from its share URL)."
+    );
+  }
+  return folderId;
+}
+
 function getFolderId(folder: UploadFolder): string {
-  return folder === "videos" ? getVideosFolderId() : getImagesFolderId();
+  if (folder === "videos") return getVideosFolderId();
+  if (folder === "files") return getFilesFolderId();
+  return getImagesFolderId();
 }
 
 // The object storage service stores files in a shared Google Drive folder.

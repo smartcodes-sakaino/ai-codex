@@ -9,6 +9,7 @@ import {
   certificates,
   settings,
   videoProgress,
+  selfReviewSubmissions,
   chapters,
   problems,
   type User,
@@ -18,6 +19,7 @@ import {
   type Certificate,
   type Settings as SettingsRow,
   type VideoProgress,
+  type SelfReviewSubmission,
   type UserWithGroups,
   type CourseWithDetails,
 } from "@shared/schema";
@@ -377,17 +379,50 @@ export const lmsStorage = {
 
   // positionSeconds tracks the furthest point reached, so it must never move backward
   // (this is what makes forward-skip prevention meaningful for watch-time reporting).
-  async upsertVideoProgress(userId: string, blockId: string, positionSeconds: number): Promise<VideoProgress> {
+  // completed is sticky — once true (the video was played to the end once), it never
+  // reverts, since it gates roadmap progress for e-learning items with no self-review.
+  async upsertVideoProgress(
+    userId: string,
+    blockId: string,
+    positionSeconds: number,
+    completed?: boolean
+  ): Promise<VideoProgress> {
     const existing = await this.getVideoProgress(userId, blockId);
     const nextPosition = Math.max(existing?.positionSeconds ?? 0, positionSeconds);
+    const nextCompleted = Boolean(existing?.completed) || Boolean(completed);
     const [row] = await db
       .insert(videoProgress)
-      .values({ id: randomUUID(), userId, blockId, positionSeconds: nextPosition })
+      .values({ id: randomUUID(), userId, blockId, positionSeconds: nextPosition, completed: nextCompleted })
       .onConflictDoUpdate({
         target: [videoProgress.userId, videoProgress.blockId],
-        set: { positionSeconds: nextPosition, updatedAt: new Date() },
+        set: { positionSeconds: nextPosition, completed: nextCompleted, updatedAt: new Date() },
       })
       .returning();
     return row;
+  },
+
+  // ============================================
+  // Self review submissions
+  // ============================================
+
+  async getSelfReviewSubmissionsFor(userId: string, problemId: string): Promise<SelfReviewSubmission[]> {
+    return await db
+      .select()
+      .from(selfReviewSubmissions)
+      .where(and(eq(selfReviewSubmissions.userId, userId), eq(selfReviewSubmissions.problemId, problemId)))
+      .orderBy(selfReviewSubmissions.submittedAt);
+  },
+
+  async createSelfReviewSubmission(data: {
+    userId: string;
+    problemId: string;
+    verdict: "pass" | "fail";
+    review: string;
+  }): Promise<SelfReviewSubmission> {
+    const [created] = await db
+      .insert(selfReviewSubmissions)
+      .values({ id: randomUUID(), ...data })
+      .returning();
+    return created;
   },
 };

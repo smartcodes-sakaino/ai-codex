@@ -1,4 +1,4 @@
-import { pgTable, text, integer, jsonb, timestamp, primaryKey, unique } from "drizzle-orm/pg-core";
+import { pgTable, text, integer, boolean, jsonb, timestamp, primaryKey, unique } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { relations } from "drizzle-orm";
@@ -137,15 +137,30 @@ export const settings = pgTable("settings", {
 });
 
 // Per-learner watch position for video blocks, so playback can resume where they left off.
+// `completed` is sticky (set once on reaching the end, never cleared) — it's what gates
+// roadmap progress for e-learning items that have no self-review link configured.
 export const videoProgress = pgTable("video_progress", {
   id: text("id").primaryKey(),
   userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   blockId: text("block_id").notNull().references(() => blocks.id, { onDelete: "cascade" }),
   positionSeconds: integer("position_seconds").notNull().default(0),
+  completed: boolean("completed").notNull().default(false),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => [
   unique().on(table.userId, table.blockId),
 ]);
+
+// Self Review Submissions table — only recorded when a logged-in learner submits
+// through the in-app self-review flow (the anonymous, token-only external link
+// never has a userId to attach one to, and isn't roadmap-gated anyway).
+export const selfReviewSubmissions = pgTable("self_review_submissions", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  problemId: text("problem_id").notNull().references(() => problems.id, { onDelete: "cascade" }),
+  verdict: text("verdict").notNull(), // "pass" | "fail"
+  review: text("review").notNull(),
+  submittedAt: timestamp("submitted_at").defaultNow().notNull(),
+});
 
 // ============================================
 // Relations
@@ -222,6 +237,11 @@ export const certificatesRelations = relations(certificates, ({ one }) => ({
 export const videoProgressRelations = relations(videoProgress, ({ one }) => ({
   user: one(users, { fields: [videoProgress.userId], references: [users.id] }),
   block: one(blocks, { fields: [videoProgress.blockId], references: [blocks.id] }),
+}));
+
+export const selfReviewSubmissionsRelations = relations(selfReviewSubmissions, ({ one }) => ({
+  user: one(users, { fields: [selfReviewSubmissions.userId], references: [users.id] }),
+  problem: one(problems, { fields: [selfReviewSubmissions.problemId], references: [problems.id] }),
 }));
 
 // ============================================
@@ -301,10 +321,16 @@ export const submitAnswerSchema = z.object({
 
 export const updateVideoProgressSchema = z.object({
   positionSeconds: z.number().min(0),
+  completed: z.boolean().optional(),
+});
+
+export const submitSelfReviewSchema = z.object({
+  token: z.string().min(1, "トークンが必要です"),
+  reviewCode: z.string().min(1, "レビュー対象のコードが必要です").max(200000, "コードが長すぎます"),
 });
 
 // Block types
-export const blockTypeSchema = z.enum(["problem", "code", "text", "video"]);
+export const blockTypeSchema = z.enum(["problem", "code", "text", "video", "lesson", "file"]);
 export type BlockType = z.infer<typeof blockTypeSchema>;
 
 // Problem block content
@@ -332,12 +358,27 @@ export const videoBlockContentSchema = z.object({
   description: z.string(),
 });
 
+// Lesson block content (授業: Markdown lesson material, shown to learners)
+export const lessonBlockContentSchema = z.object({
+  title: z.string(),
+  markdown: z.string(),
+});
+
+// File block content (ファイル: a downloadable attachment, e.g. a starter-code zip)
+export const fileBlockContentSchema = z.object({
+  title: z.string(),
+  fileObjectPath: z.string(),
+  fileName: z.string(),
+});
+
 // Union of all block content types
 export const blockContentSchema = z.union([
   problemBlockContentSchema,
   codeBlockContentSchema,
   textBlockContentSchema,
   videoBlockContentSchema,
+  lessonBlockContentSchema,
+  fileBlockContentSchema,
 ]);
 
 // ============================================
@@ -363,6 +404,15 @@ export type ProblemBlockContent = z.infer<typeof problemBlockContentSchema>;
 export type CodeBlockContent = z.infer<typeof codeBlockContentSchema>;
 export type TextBlockContent = z.infer<typeof textBlockContentSchema>;
 export type VideoBlockContent = z.infer<typeof videoBlockContentSchema>;
+export type LessonBlockContent = z.infer<typeof lessonBlockContentSchema>;
+export type FileBlockContent = z.infer<typeof fileBlockContentSchema>;
+export type AnyBlockContent =
+  | ProblemBlockContent
+  | CodeBlockContent
+  | TextBlockContent
+  | VideoBlockContent
+  | LessonBlockContent
+  | FileBlockContent;
 
 // API response types
 export interface ChapterWithCount extends Chapter {
@@ -395,10 +445,12 @@ export type Submission = typeof submissions.$inferSelect;
 export type Certificate = typeof certificates.$inferSelect;
 export type Settings = typeof settings.$inferSelect;
 export type VideoProgress = typeof videoProgress.$inferSelect;
+export type SelfReviewSubmission = typeof selfReviewSubmissions.$inferSelect;
 
 export type LoginInput = z.infer<typeof loginSchema>;
 export type SubmitAnswerInput = z.infer<typeof submitAnswerSchema>;
 export type UpdateVideoProgressInput = z.infer<typeof updateVideoProgressSchema>;
+export type SubmitSelfReviewInput = z.infer<typeof submitSelfReviewSchema>;
 
 export interface UserWithGroups extends User {
   groupIds: string[];
@@ -411,6 +463,11 @@ export interface CourseWithDetails extends Course {
 
 export type ProblemStatus = "done" | "current" | "locked";
 
+// What actually needs to happen to unlock the next item: passing a self-review
+// (if one is configured), watching an e-learning video to the end (if there's no
+// self-review), or otherwise the original AI-graded code submission.
+export type RoadmapGate = "self_review" | "video" | "submission";
+
 export interface RoadmapItem {
   chapterId: string;
   chapterTitle: string;
@@ -418,6 +475,7 @@ export interface RoadmapItem {
   problemTitle: string;
   status: ProblemStatus;
   attempts: number;
+  gate: RoadmapGate;
 }
 
 export interface CourseProgressSummary {

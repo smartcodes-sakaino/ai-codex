@@ -40,6 +40,7 @@ export interface LmsCourseWithProgress extends LmsCourse {
 }
 
 export type ProblemStatus = "done" | "current" | "locked";
+export type RoadmapGate = "self_review" | "video" | "submission";
 
 export interface RoadmapItem {
   chapterId: string;
@@ -48,6 +49,7 @@ export interface RoadmapItem {
   problemTitle: string;
   status: ProblemStatus;
   attempts: number;
+  gate: RoadmapGate;
 }
 
 export interface SubmissionResult {
@@ -280,6 +282,6 @@ export async function fetchVideoProgress(blockId: string): Promise<number> {
   return data.positionSeconds ?? 0;
 }
 
-export async function saveVideoProgress(blockId: string, positionSeconds: number): Promise<void> {
-  await apiRequest("PUT", `/api/my/video-progress/${blockId}`, { positionSeconds });
+export async function saveVideoProgress(blockId: string, positionSeconds: number, completed?: boolean): Promise<void> {
+  await apiRequest("PUT", `/api/my/video-progress/${blockId}`, { positionSeconds, completed });
 }

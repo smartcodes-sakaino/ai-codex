@@ -13,7 +13,7 @@ import {
   createSelfReviewLink,
   getSelfReviewLinkByProblemId,
 } from "@/lib/api";
-import type { Block, ProblemBlockContent, CodeBlockContent, TextBlockContent, VideoBlockContent } from "@shared/schema";
+import type { Block, ProblemBlockContent, CodeBlockContent, TextBlockContent, VideoBlockContent, LessonBlockContent, FileBlockContent, AnyBlockContent } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { Breadcrumb } from "@/components/breadcrumb";
 import { AdminNavMenu } from "@/components/admin-nav-menu";
@@ -23,6 +23,8 @@ import { ProblemBlock } from "@/components/blocks/problem-block";
 import { CodeBlock } from "@/components/blocks/code-block";
 import { TextBlock } from "@/components/blocks/text-block";
 import { VideoBlock } from "@/components/blocks/video-block";
+import { LessonBlock } from "@/components/blocks/lesson-block";
+import { FileBlock } from "@/components/blocks/file-block";
 import { AIReviewDialog } from "@/components/ai-review-dialog";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -73,7 +75,7 @@ export default function ProblemPage() {
   });
 
   const blocks = localBlocks ?? problemData?.blocks ?? [];
-  const [pendingUpdates, setPendingUpdates] = useState<Map<string, ProblemBlockContent | CodeBlockContent | TextBlockContent | VideoBlockContent>>(new Map());
+  const [pendingUpdates, setPendingUpdates] = useState<Map<string, AnyBlockContent>>(new Map());
 
   const createBlockMutation = useMutation({
     mutationFn: createBlock,
@@ -83,7 +85,7 @@ export default function ProblemPage() {
   });
 
   const updateBlockMutation = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: Partial<{ content: ProblemBlockContent | CodeBlockContent | TextBlockContent | VideoBlockContent }> }) =>
+    mutationFn: ({ id, data }: { id: string; data: Partial<{ content: AnyBlockContent }> }) =>
       updateBlock(id, data),
   });
 
@@ -103,16 +105,20 @@ export default function ProblemPage() {
     mutationFn: reorderBlocks,
   });
 
-  const handleAddBlock = (type: "problem" | "code" | "text" | "video") => {
+  const handleAddBlock = (type: "problem" | "code" | "text" | "video" | "lesson" | "file") => {
     if (!id) return;
 
-    let content: ProblemBlockContent | CodeBlockContent | TextBlockContent | VideoBlockContent;
+    let content: AnyBlockContent;
     if (type === "problem") {
       content = { text: "", images: [] };
     } else if (type === "code") {
       content = { code: "", language: "javascript" };
     } else if (type === "video") {
       content = { title: "", videoObjectPath: "", description: "" };
+    } else if (type === "lesson") {
+      content = { title: "", markdown: "" };
+    } else if (type === "file") {
+      content = { title: "", fileObjectPath: "", fileName: "" };
     } else {
       content = { text: "" };
     }
@@ -127,7 +133,7 @@ export default function ProblemPage() {
     if (!editMode) setEditMode(true);
   };
 
-  const handleUpdateBlock = (blockId: string, content: ProblemBlockContent | CodeBlockContent | TextBlockContent | VideoBlockContent) => {
+  const handleUpdateBlock = (blockId: string, content: AnyBlockContent) => {
     // Update local state only (no API call) to preserve cursor position
     setLocalBlocks(
       blocks.map((b) => (b.id === blockId ? { ...b, content } : b))
@@ -355,17 +361,25 @@ export default function ProblemPage() {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent>
+                <DropdownMenuItem onClick={() => handleAddBlock("lesson")} data-testid="menu-add-lesson-block">
+                  <span className="text-amber-500 mr-2">■</span>
+                  授業ブロック
+                </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => handleAddBlock("problem")} data-testid="menu-add-problem-block">
                   <span className="text-orange-500 mr-2">■</span>
                   問題ブロック
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => handleAddBlock("code")} data-testid="menu-add-code-block">
                   <span className="text-gray-500 mr-2">■</span>
-                  コードブロック
+                  お手本コードブロック
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => handleAddBlock("text")} data-testid="menu-add-text-block">
                   <span className="text-blue-500 mr-2">■</span>
-                  テキストブロック
+                  AI解説ブロック
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleAddBlock("file")} data-testid="menu-add-file-block">
+                  <span className="text-teal-500 mr-2">■</span>
+                  ファイルブロック
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => handleAddBlock("video")} data-testid="menu-add-video-block">
                   <span className="text-purple-500 mr-2">■</span>
@@ -449,6 +463,36 @@ export default function ProblemPage() {
               if (block.type === "video") {
                 return (
                   <VideoBlock
+                    key={block.id}
+                    block={block}
+                    editMode={editMode}
+                    onUpdate={(content) => handleUpdateBlock(block.id, content)}
+                    onDelete={() => setDeleteBlockId(block.id)}
+                    onMoveUp={() => handleMoveBlock(block.id, "up")}
+                    onMoveDown={() => handleMoveBlock(block.id, "down")}
+                    isFirst={index === 0}
+                    isLast={index === blocks.length - 1}
+                  />
+                );
+              }
+              if (block.type === "lesson") {
+                return (
+                  <LessonBlock
+                    key={block.id}
+                    block={block}
+                    editMode={editMode}
+                    onUpdate={(content) => handleUpdateBlock(block.id, content)}
+                    onDelete={() => setDeleteBlockId(block.id)}
+                    onMoveUp={() => handleMoveBlock(block.id, "up")}
+                    onMoveDown={() => handleMoveBlock(block.id, "down")}
+                    isFirst={index === 0}
+                    isLast={index === blocks.length - 1}
+                  />
+                );
+              }
+              if (block.type === "file") {
+                return (
+                  <FileBlock
                     key={block.id}
                     block={block}
                     editMode={editMode}

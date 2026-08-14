@@ -1,9 +1,12 @@
-import type { Express } from "express";
+import type { Express, Request, Response } from "express";
 import { GoogleGenAI, Modality } from "@google/genai";
 import { storage } from "./storage";
-import { insertChapterSchema, insertProblemSchema, insertBlockSchema, insertPromptSchema } from "@shared/schema";
+import { insertChapterSchema, insertProblemSchema, insertBlockSchema, insertPromptSchema, submitSelfReviewSchema } from "@shared/schema";
 import { registerObjectStorageRoutes, ObjectStorageService } from "./replit_integrations/object_storage";
 import { registerLmsRoutes } from "./lms/routes";
+import { lmsStorage } from "./lms/storage";
+import { runSelfReviewCheck, AiUnavailableError, processTemplate } from "./lms/aiCheck";
+import { checkAndIssueCertificatesForProblem } from "./lms/roadmap";
 import { z } from "zod";
 import { randomUUID } from "crypto";
 
@@ -82,69 +85,6 @@ const DEFAULT_REVIEW_TEMPLATE = `#命令書:
 リファクタリング的な目線だったり、違う方法の提示だったり、「ここが違う！」というよりもより良いやり方の提示
 ## 修正が必要なところ（あれば）
 絶対に直さなければいけないところを列挙。指摘だけで済む場合など、修正点がない場合は無しでOK。`;
-
-const DEFAULT_SELF_REVIEW_TEMPLATE = `#命令書:
-あなたは教育のスペシャリストであり、プロのwebエンジニアです。
-研修生が提出したコードを、問題文・模範解答コード・解説文をもとにセルフレビューとしてフィードバックしてください。
-
-#制約条件
-- 対象は初学者の研修生です。丁寧でわかりやすい言い回しを使ってください。
-- 提出コードに修正の必要がない場合は、「総評」のみを出力し、確認テストの受講を促してください。
-- 提出コードに修正が必要な場合は、「総評」「良かった点」「改善点」「修正点」の4項目すべてを出力してください。
-
-#入力文
-・問題データ
-{{problem}}
-{{#if modelCode}}
-・模範解答コード
-\`\`\`
-{{modelCode}}
-\`\`\`
-{{/if}}
-{{#if explanation}}
-・解説文
-{{explanation}}
-{{/if}}
-
-・研修生の提出コード
-\`\`\`
-{{reviewCode}}
-\`\`\`
-
-#出力文
-以下の内容で、md形式で出力してください。
-
-修正が不要な場合（提出コードが十分に正しい場合）:
-## 総評
-提出コードの全体的な評価を記載。「素晴らしい出来です！」等の前向きなコメントと共に、確認テストへ進むよう促してください。
-例：「問題の要件を満たした素晴らしいコードです。次は確認テストに挑戦してみましょう！」
-
-修正が必要な場合:
-## 総評
-提出コードの全体的な評価を記載。
-## 良かった点
-研修生の提出コードの中で良かった部分を具体的に挙げてください。モチベーションを上げる前向きなフィードバック。
-## 改善点
-より良くするための改善案やリファクタリングの提案。「こうするともっと良くなりますよ」というアドバイス。
-## 修正点
-絶対に修正しなければならない箇所を具体的に列挙してください。何が間違っていて、どう直すべきかを明確に説明してください。`;
-
-// Template processor for Handlebars-like syntax
-function processTemplate(template: string, vars: Record<string, string | undefined>): string {
-  let result = template;
-  
-  // Process conditionals: {{#if varName}}...{{/if}}
-  result = result.replace(/\{\{#if\s+(\w+)\}\}([\s\S]*?)\{\{\/if\}\}/g, (_, varName, content) => {
-    return vars[varName] ? content : "";
-  });
-  
-  // Process variables: {{varName}}
-  result = result.replace(/\{\{(\w+)\}\}/g, (_, varName) => {
-    return vars[varName] || "";
-  });
-  
-  return result;
-}
 
 export async function registerRoutes(app: Express): Promise<void> {
   // Register object storage routes for file uploads
@@ -590,14 +530,13 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
-  const selfReviewSchema = z.object({
-    token: z.string().min(1, "トークンが必要です"),
-    reviewCode: z.string().min(1, "レビュー対象のコードが必要です").max(200000, "コードが長すぎます"),
-  });
-
-  app.post("/api/ai/self-review", async (req, res) => {
+  // Reachable two ways: an anonymous external link (no session — feedback only,
+  // nothing is persisted since there's no user to gate) and, when opened from
+  // within the app by a logged-in learner, the same page also records a
+  // pass/fail submission that the roadmap uses to gate progress.
+  app.post("/api/ai/self-review", async (req: Request, res: Response) => {
     try {
-      const parseResult = selfReviewSchema.safeParse(req.body);
+      const parseResult = submitSelfReviewSchema.safeParse(req.body);
       if (!parseResult.success) {
         const errorMessage = parseResult.error.errors[0]?.message || "入力が無効です";
         return res.status(400).json({ error: errorMessage });
@@ -635,23 +574,33 @@ export async function registerRoutes(app: Express): Promise<void> {
         .filter(Boolean)
         .join("\n\n");
 
-      const savedPrompt = await storage.getPrompt("self_review");
-      const template = savedPrompt?.template || DEFAULT_SELF_REVIEW_TEMPLATE;
+      let result;
+      try {
+        result = await runSelfReviewCheck(problemText, modelCode, explanation, reviewCode);
+      } catch (error) {
+        if (error instanceof AiUnavailableError) {
+          return res.status(502).json({ error: error.message });
+        }
+        throw error;
+      }
 
-      const prompt = processTemplate(template, {
-        problem: problemText,
-        modelCode,
-        explanation,
-        reviewCode,
-      });
+      const userId = req.session.userId;
+      if (userId) {
+        const user = await lmsStorage.getUserById(userId);
+        if (user && user.role === "learner") {
+          await lmsStorage.createSelfReviewSubmission({
+            userId,
+            problemId: link.problemId,
+            verdict: result.verdict,
+            review: result.review,
+          });
+          if (result.verdict === "pass") {
+            await checkAndIssueCertificatesForProblem(userId, link.problemId, user.name);
+          }
+        }
+      }
 
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
-      });
-
-      const review = response.text || "レビューを生成できませんでした。";
-      res.json({ review });
+      res.json(result);
     } catch (error) {
       console.error("セルフレビュー生成エラー:", error);
       res.status(500).json({ error: "セルフレビューの生成に失敗しました" });
