@@ -29,6 +29,28 @@ function parseByteRange(rangeHeader: string, totalLength: number): { start: numb
   return { start, end: Math.min(end, totalLength - 1) };
 }
 
+// Loosely parses "bytes=start-end" without needing to know the total file size —
+// used only to decide what to ask Drive for, before we know how big the file is.
+function parseRangeRequest(rangeHeader: string): { start?: number; end?: number } | null {
+  const match = /^bytes=(\d*)-(\d*)$/.exec(rangeHeader.trim());
+  if (!match) return null;
+  const [, startStr, endStr] = match;
+  if (!startStr && !endStr) return null;
+  return {
+    start: startStr ? parseInt(startStr, 10) : undefined,
+    end: endStr ? parseInt(endStr, 10) : undefined,
+  };
+}
+
+// Replit's proxy kills responses over roughly the same ~32MB it caps request
+// bodies at (an opaque 500, discovered the same way the upload limit was: by
+// bisecting response sizes against the live deployment). So a single hop to
+// Drive never asks for more than this many bytes, regardless of what the
+// client's Range header requested — or whether it sent one at all. This is
+// exactly how real video streaming already works: the player fetches a large
+// file as a sequence of range-limited chunks, not one giant response.
+const MAX_RESPONSE_CHUNK_BYTES = 16 * 1024 * 1024;
+
 // Shared Google auth for Drive (image/file storage) and Sheets (progress export).
 // Locally, this authenticates via Application Default Credentials: set
 // GOOGLE_APPLICATION_CREDENTIALS to the path of a Google Cloud service account key
@@ -211,16 +233,20 @@ export class ObjectStorageService {
         return;
       }
 
-      // A single request with alt=media returns both the file bytes and its
-      // Content-Type header, so no separate metadata lookup is needed. The Drive
-      // API also honors a forwarded Range header, returning 206 + Content-Range
-      // itself — we just relay whatever it sends back.
+      // Always ask Drive for an explicit, capped range — never the client's raw
+      // Range header as-is, and never "no range at all" — so a single hop to
+      // Drive can never return more than MAX_RESPONSE_CHUNK_BYTES. The client's
+      // requested end (if any) is honored as long as it fits under the cap.
+      const requested = typeof rangeHeader === "string" ? parseRangeRequest(rangeHeader) : null;
+      const start = requested?.start ?? 0;
+      const end =
+        requested?.end !== undefined
+          ? Math.min(requested.end, start + MAX_RESPONSE_CHUNK_BYTES - 1)
+          : start + MAX_RESPONSE_CHUNK_BYTES - 1;
+
       const response = await driveClient.files.get(
         { fileId, alt: "media", supportsAllDrives: true },
-        {
-          responseType: "stream",
-          headers: typeof rangeHeader === "string" ? { Range: rangeHeader } : undefined,
-        }
+        { responseType: "stream", headers: { Range: `bytes=${start}-${end}` } }
       );
 
       // googleapis' fetch-based transport returns a Headers instance here, not
@@ -233,18 +259,8 @@ export class ObjectStorageService {
           : ((rawHeaders as Record<string, string> | undefined)?.[name] ?? null);
 
       const contentType = getHeader("content-type") || "application/octet-stream";
-      const isPartial = response.status === 206;
-
-      res.status(response.status ?? 200);
-      res.set({
-        "Content-Type": contentType,
-        "Accept-Ranges": "bytes",
-        "Cache-Control": `public, max-age=${cacheTtlSec}`,
-      });
-      const contentRange = getHeader("content-range");
-      if (contentRange) res.set("Content-Range", contentRange);
-      const contentLength = getHeader("content-length");
-      if (contentLength) res.set("Content-Length", contentLength);
+      const contentRange = getHeader("content-range"); // "bytes start-end/total"
+      const rangeMatch = contentRange ? /^bytes (\d+)-(\d+)\/(\d+)$/.exec(contentRange) : null;
 
       response.data.on("error", (err: Error) => {
         console.error("Stream error:", err);
@@ -253,16 +269,44 @@ export class ObjectStorageService {
         }
       });
 
-      // Only full (non-partial) responses represent the whole file, so only
-      // those are safe to cache.
-      if (!isPartial) {
+      // The client didn't ask for a range, and the chunk we happened to fetch
+      // (capped at MAX_RESPONSE_CHUNK_BYTES) turned out to cover the whole
+      // file — i.e. the file is smaller than the cap. Respond exactly like a
+      // normal full download, and cache it (only whole files are cached).
+      const isWholeFile =
+        typeof rangeHeader !== "string" &&
+        rangeMatch !== null &&
+        rangeMatch[1] === "0" &&
+        Number(rangeMatch[2]) + 1 === Number(rangeMatch[3]);
+
+      if (isWholeFile) {
+        res.status(200).set({
+          "Content-Type": contentType,
+          "Content-Length": rangeMatch![3],
+          "Accept-Ranges": "bytes",
+          "Cache-Control": `public, max-age=${cacheTtlSec}`,
+        });
         const chunks: Buffer[] = [];
         response.data.on("data", (chunk: Buffer) => chunks.push(chunk));
         response.data.on("end", () => {
           setCachedObject(fileId, { buffer: Buffer.concat(chunks), contentType });
         });
+        response.data.pipe(res);
+        return;
       }
 
+      // Otherwise relay Drive's partial response as-is — this is the common
+      // case for anything bigger than one chunk, whether or not the client
+      // actually sent a Range header itself.
+      res.status(response.status && response.status !== 200 ? response.status : 206);
+      res.set({
+        "Content-Type": contentType,
+        "Accept-Ranges": "bytes",
+        "Cache-Control": `public, max-age=${cacheTtlSec}`,
+      });
+      if (contentRange) res.set("Content-Range", contentRange);
+      const contentLength = getHeader("content-length");
+      if (contentLength) res.set("Content-Length", contentLength);
       response.data.pipe(res);
     } catch (error) {
       console.error("Error downloading file:", error);
