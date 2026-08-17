@@ -1,5 +1,5 @@
 import { Link } from "wouter";
-import { LogOut } from "lucide-react";
+import { LogOut, LayoutDashboard } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/use-auth";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -36,6 +36,14 @@ export function LearnerLayout({
         </div>
         <div className="flex items-center gap-3 shrink-0">
           <span className="text-sm text-muted-foreground hidden sm:inline">{user?.name}</span>
+          {user?.role === "admin" && (
+            <Link href="/admin">
+              <Button variant="ghost" size="sm" data-testid="button-back-to-admin">
+                <LayoutDashboard className="h-4 w-4 mr-2" />
+                管理画面へ
+              </Button>
+            </Link>
+          )}
           <ThemeToggle />
           <Button variant="ghost" size="sm" onClick={() => logout()} data-testid="button-logout">
             <LogOut className="h-4 w-4 mr-2" />

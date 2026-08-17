@@ -587,7 +587,9 @@ export async function registerRoutes(app: Express): Promise<void> {
       const userId = req.session.userId;
       if (userId) {
         const user = await lmsStorage.getUserById(userId);
-        if (user && user.role === "learner") {
+        // Admins can also take courses (to preview the learner experience), so
+        // their self-review attempts are gating-eligible too, not just learners'.
+        if (user && (user.role === "learner" || user.role === "admin")) {
           await lmsStorage.createSelfReviewSubmission({
             userId,
             problemId: link.problemId,

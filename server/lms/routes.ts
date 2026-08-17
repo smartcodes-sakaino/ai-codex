@@ -19,7 +19,9 @@ import { storage } from "../storage";
 
 export function registerLmsRoutes(app: Express): void {
   const requireAdmin = [requireAuth, requireRole("admin")] as const;
-  const requireLearner = [requireAuth, requireRole("learner")] as const;
+  // Admins can also take courses (e.g. to preview content as a learner would
+  // see it), so this accepts either role rather than "learner" only.
+  const requireLearner = [requireAuth, requireRole(["learner", "admin"])] as const;
 
   // ============================================
   // Auth

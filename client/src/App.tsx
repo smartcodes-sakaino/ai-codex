@@ -39,15 +39,15 @@ function Router() {
       <Route path="/admin/progress" component={() => <RequireRole role="admin"><AdminProgressPage /></RequireRole>} />
       <Route path="/admin/settings" component={() => <RequireRole role="admin"><AdminLmsSettingsPage /></RequireRole>} />
 
-      <Route path="/learn" component={() => <RequireRole role="learner"><LearnerMyCoursesPage /></RequireRole>} />
-      <Route path="/learn/courses/:id" component={() => <RequireRole role="learner"><LearnerRoadmapPage /></RequireRole>} />
+      <Route path="/learn" component={() => <RequireRole role={["learner", "admin"]}><LearnerMyCoursesPage /></RequireRole>} />
+      <Route path="/learn/courses/:id" component={() => <RequireRole role={["learner", "admin"]}><LearnerRoadmapPage /></RequireRole>} />
       <Route
         path="/learn/courses/:id/problems/:problemId"
-        component={() => <RequireRole role="learner"><LearnerProblemPage /></RequireRole>}
+        component={() => <RequireRole role={["learner", "admin"]}><LearnerProblemPage /></RequireRole>}
       />
       <Route
         path="/learn/courses/:id/certificate"
-        component={() => <RequireRole role="learner"><LearnerCertificatePage /></RequireRole>}
+        component={() => <RequireRole role={["learner", "admin"]}><LearnerCertificatePage /></RequireRole>}
       />
 
       <Route component={NotFound} />

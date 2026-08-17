@@ -51,9 +51,10 @@ export async function requireAuth(req: AuthedRequest, res: Response, next: NextF
   next();
 }
 
-export function requireRole(role: "admin" | "learner") {
+export function requireRole(role: "admin" | "learner" | Array<"admin" | "learner">) {
+  const allowed: string[] = Array.isArray(role) ? role : [role];
   return (req: AuthedRequest, res: Response, next: NextFunction) => {
-    if (!req.user || req.user.role !== role) {
+    if (!req.user || !allowed.includes(req.user.role)) {
       return res.status(403).json({ error: "権限がありません" });
     }
     next();
