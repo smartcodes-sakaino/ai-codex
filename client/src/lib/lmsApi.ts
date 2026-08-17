@@ -177,6 +177,18 @@ export async function createCourseLms(data: {
   return res.json();
 }
 
+export async function updateCourseLms(
+  id: string,
+  data: {
+    title: string;
+    chapterIds: string[];
+    assignments: { type: "user" | "group"; id: string }[];
+  }
+): Promise<LmsCourse> {
+  const res = await apiRequest("PATCH", `/api/admin/courses/${id}`, data);
+  return res.json();
+}
+
 export async function deleteCourseLms(id: string): Promise<void> {
   await apiRequest("DELETE", `/api/admin/courses/${id}`);
 }

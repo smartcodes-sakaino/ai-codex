@@ -164,6 +164,18 @@ export function registerLmsRoutes(app: Express): void {
     res.status(201).json(course);
   });
 
+  app.patch<{ id: string }>("/api/admin/courses/:id", ...requireAdmin, async (req: Request, res: Response) => {
+    const parsed = insertCourseSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: parsed.error.errors[0]?.message || "入力が無効です" });
+    }
+    const course = await lmsStorage.updateCourse((req.params.id as string), parsed.data);
+    if (!course) {
+      return res.status(404).json({ error: "コースが見つかりません" });
+    }
+    res.json(course);
+  });
+
   app.get<{ id: string }>("/api/admin/courses/:id", ...requireAdmin, async (req: Request, res: Response) => {
     const course = await lmsStorage.getCourse((req.params.id as string));
     if (!course) {

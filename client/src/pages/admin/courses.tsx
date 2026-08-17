@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { AdminLayout } from "@/components/admin-layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -27,9 +27,11 @@ import { fetchChapters } from "@/lib/api";
 import {
   fetchAdminCourses,
   createCourseLms,
+  updateCourseLms,
   deleteCourseLms,
   fetchUsers,
   fetchGroupsLms,
+  type LmsCourse,
   type LmsUser,
   type LmsGroup,
 } from "@/lib/lmsApi";
@@ -43,27 +45,56 @@ export default function AdminCoursesPage() {
   const { data: users = [] } = useQuery({ queryKey: ["/api/admin/users"], queryFn: fetchUsers });
   const { data: groups = [] } = useQuery({ queryKey: ["/api/admin/groups"], queryFn: fetchGroupsLms });
 
+  const [editingCourseId, setEditingCourseId] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [chapterIds, setChapterIds] = useState<string[]>([]);
   const [assignments, setAssignments] = useState<AssignTarget[]>([]);
   const [assignType, setAssignType] = useState<"user" | "group">("group");
   const [assignTargetId, setAssignTargetId] = useState("");
 
+  const resetForm = () => {
+    setEditingCourseId(null);
+    setTitle("");
+    setChapterIds([]);
+    setAssignments([]);
+    setAssignTargetId("");
+  };
+
+  const startEditing = (course: LmsCourse) => {
+    setEditingCourseId(course.id);
+    setTitle(course.title);
+    setChapterIds(course.chapterIds);
+    setAssignments(course.assignments);
+    setAssignTargetId("");
+    formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
+  const formRef = useRef<HTMLDivElement>(null);
+
   const createMutation = useMutation({
     mutationFn: createCourseLms,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/courses"] });
-      setTitle("");
-      setChapterIds([]);
-      setAssignments([]);
+      resetForm();
       toast({ title: "コースを作成しました" });
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: (data: { title: string; chapterIds: string[]; assignments: AssignTarget[] }) =>
+      updateCourseLms(editingCourseId!, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/courses"] });
+      resetForm();
+      toast({ title: "コースを更新しました" });
     },
   });
 
   const deleteMutation = useMutation({
     mutationFn: deleteCourseLms,
-    onSuccess: () => {
+    onSuccess: (_, deletedId) => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/courses"] });
+      if (editingCourseId === deletedId) resetForm();
       toast({ title: "コースを削除しました" });
     },
   });
@@ -89,7 +120,18 @@ export default function AdminCoursesPage() {
     return `${t.type === "group" ? "グループ" : "個人"}: ${found?.name ?? "?"}`;
   };
 
-  const handleCreate = () => {
+  // Selecting a target adds it immediately (rather than requiring a separate
+  // "追加" click) so a picked-but-not-yet-added target can never be silently
+  // lost when the course is submitted.
+  const handlePickTarget = (id: string) => {
+    if (!id) return;
+    if (!assignments.some((a) => a.type === assignType && a.id === id)) {
+      setAssignments((prev) => [...prev, { type: assignType, id }]);
+    }
+    setAssignTargetId("");
+  };
+
+  const handleSubmit = () => {
     if (!title.trim()) {
       toast({ title: "コース名を入力してください", variant: "destructive" });
       return;
@@ -98,8 +140,15 @@ export default function AdminCoursesPage() {
       toast({ title: "チャプターを1つ以上選んでください", variant: "destructive" });
       return;
     }
-    createMutation.mutate({ title: title.trim(), chapterIds, assignments });
+    const data = { title: title.trim(), chapterIds, assignments };
+    if (editingCourseId) {
+      updateMutation.mutate(data);
+    } else {
+      createMutation.mutate(data);
+    }
   };
+
+  const isSubmitting = createMutation.isPending || updateMutation.isPending;
 
   return (
     <AdminLayout title="コース管理">
@@ -132,6 +181,14 @@ export default function AdminCoursesPage() {
                       <Button
                         variant="ghost"
                         size="sm"
+                        onClick={() => startEditing(c)}
+                        data-testid={`button-edit-course-${c.id}`}
+                      >
+                        編集
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
                         onClick={() => deleteMutation.mutate(c.id)}
                         data-testid={`button-delete-course-${c.id}`}
                       >
@@ -146,9 +203,9 @@ export default function AdminCoursesPage() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card ref={formRef}>
         <CardHeader>
-          <CardTitle className="text-base">新規コース作成</CardTitle>
+          <CardTitle className="text-base">{editingCourseId ? "コースを編集" : "新規コース作成"}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
@@ -238,9 +295,9 @@ export default function AdminCoursesPage() {
                   <SelectItem value="user">個人</SelectItem>
                 </SelectContent>
               </Select>
-              <Select value={assignTargetId} onValueChange={setAssignTargetId}>
+              <Select value={assignTargetId} onValueChange={handlePickTarget}>
                 <SelectTrigger className="flex-1">
-                  <SelectValue placeholder="選択してください" />
+                  <SelectValue placeholder="選択するとすぐに追加されます" />
                 </SelectTrigger>
                 <SelectContent>
                   {targetOptions.map((t) => (
@@ -250,16 +307,6 @@ export default function AdminCoursesPage() {
                   ))}
                 </SelectContent>
               </Select>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  if (!assignTargetId) return;
-                  if (assignments.some((a) => a.type === assignType && a.id === assignTargetId)) return;
-                  setAssignments((prev) => [...prev, { type: assignType, id: assignTargetId }]);
-                }}
-              >
-                追加
-              </Button>
             </div>
             <div className="flex flex-wrap gap-2 mt-2">
               {assignments.map((a) => (
@@ -276,14 +323,21 @@ export default function AdminCoursesPage() {
             </div>
           </div>
 
-          <Button
-            className="bg-gradient-to-r from-[#FF8C42] to-[#FFA566] text-white"
-            onClick={handleCreate}
-            disabled={createMutation.isPending}
-            data-testid="button-create-course"
-          >
-            このコースを作成
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              className="bg-gradient-to-r from-[#FF8C42] to-[#FFA566] text-white"
+              onClick={handleSubmit}
+              disabled={isSubmitting}
+              data-testid="button-create-course"
+            >
+              {editingCourseId ? "コースを更新する" : "このコースを作成"}
+            </Button>
+            {editingCourseId && (
+              <Button variant="outline" onClick={resetForm} data-testid="button-cancel-edit-course">
+                キャンセル
+              </Button>
+            )}
+          </div>
         </CardContent>
       </Card>
     </AdminLayout>

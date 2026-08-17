@@ -196,6 +196,46 @@ export const lmsStorage = {
     return this.attachCourseDetails(created);
   },
 
+  async updateCourse(
+    id: string,
+    data: {
+      title: string;
+      chapterIds: string[];
+      assignments: { type: "user" | "group"; id: string }[];
+    }
+  ): Promise<CourseWithDetails | undefined> {
+    const [updated] = await db.update(courses).set({ title: data.title }).where(eq(courses.id, id)).returning();
+    if (!updated) return undefined;
+
+    // Chapters and assignments are fully replaced rather than diffed — the
+    // edit form always submits the complete desired lists, same as create.
+    await db.delete(courseChapters).where(eq(courseChapters.courseId, id));
+    if (data.chapterIds.length > 0) {
+      await db.insert(courseChapters).values(
+        data.chapterIds.map((chapterId, index) => ({
+          id: randomUUID(),
+          courseId: id,
+          chapterId,
+          order: index,
+        }))
+      );
+    }
+
+    await db.delete(courseAssignments).where(eq(courseAssignments.courseId, id));
+    if (data.assignments.length > 0) {
+      await db.insert(courseAssignments).values(
+        data.assignments.map((a) => ({
+          id: randomUUID(),
+          courseId: id,
+          targetType: a.type,
+          targetId: a.id,
+        }))
+      );
+    }
+
+    return this.attachCourseDetails(updated);
+  },
+
   async deleteCourse(id: string): Promise<void> {
     await db.delete(courses).where(eq(courses.id, id));
   },
