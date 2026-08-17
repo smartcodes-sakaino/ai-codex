@@ -309,6 +309,7 @@ export default function ChapterPage() {
                 key={problem.id}
                 problem={problem}
                 hasExplanation={problem.hasExplanation}
+                hasLecture={problem.hasLecture}
                 editMode={editMode}
                 onDelete={(id) => setDeleteProblemId(id)}
                 onRename={handleRenameProblem}

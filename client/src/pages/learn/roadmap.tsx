@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useParams, Link } from "wouter";
+import { BookOpen, PlayCircle } from "lucide-react";
 import { LearnerLayout } from "@/components/learner-layout";
 import { Button } from "@/components/ui/button";
 import { fetchMyCourses, fetchMyRoadmap, type RoadmapItem } from "@/lib/lmsApi";
@@ -73,9 +74,26 @@ export default function LearnerRoadmapPage() {
                   >
                     {item.status === "done" ? "✓" : item.status === "current" ? idx + 1 : "🔒"}
                   </div>
-                  <span className={"flex-1 font-medium text-sm " + (item.status === "locked" ? "text-muted-foreground" : "")}>
+                  <span
+                    className={
+                      "flex-1 font-medium text-sm flex items-center gap-1.5 " +
+                      (item.status === "locked" ? "text-muted-foreground" : "")
+                    }
+                  >
+                    {item.hasLecture && (
+                      <BookOpen className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" aria-label="講義あり" />
+                    )}
                     {item.problemTitle}
                   </span>
+                  {item.videoStarted && (
+                    <span
+                      className="flex items-center gap-1 text-xs font-medium text-[#E8722C]"
+                      data-testid={`badge-video-started-${item.problemId}`}
+                    >
+                      <PlayCircle className="h-3.5 w-3.5" />
+                      視聴中
+                    </span>
+                  )}
                   {item.attempts > 0 && (
                     <span className="text-xs text-muted-foreground">{item.attempts}回挑戦</span>
                   )}

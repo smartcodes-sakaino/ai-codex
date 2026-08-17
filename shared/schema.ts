@@ -421,11 +421,14 @@ export interface ChapterWithCount extends Chapter {
 
 export interface ProblemWithStatus extends Problem {
   hasExplanation: boolean;
+  /** Whether this problem has any lecture content (a lesson block or a video block). */
+  hasLecture: boolean;
 }
 
 export interface ProblemWithBlocks extends Problem {
   blocks: Block[];
   hasExplanation: boolean;
+  hasLecture: boolean;
 }
 
 export type User = typeof users.$inferSelect;
@@ -476,6 +479,10 @@ export interface RoadmapItem {
   status: ProblemStatus;
   attempts: number;
   gate: RoadmapGate;
+  /** Whether this problem has a lesson or video block (shown as a neutral content-type cue, not a warning). */
+  hasLecture: boolean;
+  /** True when the gating video has been started but not yet finished, for a "視聴中" cue on the current item. */
+  videoStarted: boolean;
 }
 
 export interface CourseProgressSummary {

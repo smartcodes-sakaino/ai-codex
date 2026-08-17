@@ -50,6 +50,8 @@ export interface RoadmapItem {
   status: ProblemStatus;
   attempts: number;
   gate: RoadmapGate;
+  hasLecture: boolean;
+  videoStarted: boolean;
 }
 
 export interface SubmissionResult {

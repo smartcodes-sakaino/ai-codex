@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Plus, Edit, Save, X, ChevronDown, FileText, Loader2, Link, Copy, Check } from "lucide-react";
+import { Plus, Edit, Save, X, ChevronDown, FileText, Loader2, Link, Copy, Check, AlertTriangle } from "lucide-react";
 import { queryClient } from "@/lib/queryClient";
 import {
   fetchProblemWithBlocks,
@@ -301,7 +301,18 @@ export default function ProblemPage() {
 
       <main className="container mx-auto px-4 py-8 max-w-4xl">
         <div className="flex items-center justify-between mb-6 gap-4 flex-wrap">
-          <h1 className="text-2xl font-bold">{problemData.title}</h1>
+          <div className="flex items-center gap-3 flex-wrap">
+            <h1 className="text-2xl font-bold">{problemData.title}</h1>
+            {!problemData.hasLecture && (
+              <span
+                className="flex items-center gap-1 text-amber-600 dark:text-amber-500 text-sm"
+                data-testid="badge-no-lecture"
+              >
+                <AlertTriangle className="h-4 w-4" />
+                講義コンテンツがありません
+              </span>
+            )}
+          </div>
           <div className="flex items-center gap-2">
             {hasExplanation && !editMode && (
               <>

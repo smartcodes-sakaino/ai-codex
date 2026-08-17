@@ -51,7 +51,7 @@ export function LearnerLayout({
           </Button>
         </div>
       </header>
-      <main className="max-w-4xl mx-auto p-6">
+      <main className="max-w-7xl mx-auto p-6">
         {backHref && (
           <Link href={backHref} className="text-sm text-muted-foreground hover:text-foreground inline-block mb-4">
             ← {backLabel || "戻る"}

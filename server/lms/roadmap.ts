@@ -3,30 +3,39 @@ import { storage } from "../storage";
 import { issueCertificateIfNeeded } from "./certificate";
 import type { ProblemStatus, RoadmapItem, RoadmapGate as Gate } from "@shared/schema";
 
+interface ProblemMeta {
+  gate: Gate;
+  hasLecture: boolean;
+  videoBlockIds: string[];
+}
+
 // What actually gates moving on to the next item, in priority order:
 // a configured self-review link always wins (its verdict is the authoritative
 // pass/fail once it exists), then a video block (must be watched to the end),
 // and only plain problem/code content falls back to the original AI-graded
-// code submission gate.
-async function resolveGate(problemId: string): Promise<Gate> {
-  const selfReviewLink = await storage.getSelfReviewLinkByProblemId(problemId);
-  if (selfReviewLink) return "self_review";
-  const blocks = await storage.getBlocks(problemId);
-  if (blocks.some((b) => b.type === "video")) return "video";
-  return "submission";
+// code submission gate. Also captures whether the problem has any lecture
+// content (a lesson or video block) — a neutral content-type cue, not part
+// of gating — computed here too since it needs the same block list.
+async function resolveProblemMeta(problemId: string): Promise<ProblemMeta> {
+  const [selfReviewLink, blocks] = await Promise.all([
+    storage.getSelfReviewLinkByProblemId(problemId),
+    storage.getBlocks(problemId),
+  ]);
+  const videoBlockIds = blocks.filter((b) => b.type === "video").map((b) => b.id);
+  const hasLecture = blocks.some((b) => b.type === "lesson" || b.type === "video");
+  const gate: Gate = selfReviewLink ? "self_review" : videoBlockIds.length > 0 ? "video" : "submission";
+  return { gate, hasLecture, videoBlockIds };
 }
 
-async function isPassed(userId: string, courseId: string, problemId: string, gate: Gate): Promise<boolean> {
-  if (gate === "self_review") {
+async function isPassed(userId: string, courseId: string, problemId: string, meta: ProblemMeta): Promise<boolean> {
+  if (meta.gate === "self_review") {
     const attempts = await lmsStorage.getSelfReviewSubmissionsFor(userId, problemId);
     return attempts.some((a) => a.verdict === "pass");
   }
-  if (gate === "video") {
-    const blocks = await storage.getBlocks(problemId);
-    const videoBlocks = blocks.filter((b) => b.type === "video");
-    if (videoBlocks.length === 0) return false;
-    for (const block of videoBlocks) {
-      const progress = await lmsStorage.getVideoProgress(userId, block.id);
+  if (meta.gate === "video") {
+    if (meta.videoBlockIds.length === 0) return false;
+    for (const blockId of meta.videoBlockIds) {
+      const progress = await lmsStorage.getVideoProgress(userId, blockId);
       if (!progress?.completed) return false;
     }
     return true;
@@ -35,12 +44,23 @@ async function isPassed(userId: string, courseId: string, problemId: string, gat
   return attempts.some((a) => a.verdict === "pass");
 }
 
+// True once any gating video has been watched partway but not finished — a
+// lightweight "視聴中" cue on the roadmap, distinct from "not started yet".
+async function isVideoStarted(userId: string, meta: ProblemMeta): Promise<boolean> {
+  if (meta.gate !== "video") return false;
+  for (const blockId of meta.videoBlockIds) {
+    const progress = await lmsStorage.getVideoProgress(userId, blockId);
+    if (progress && progress.positionSeconds > 0 && !progress.completed) return true;
+  }
+  return false;
+}
+
 export async function getRoadmap(userId: string, courseId: string): Promise<RoadmapItem[]> {
   const flat = await lmsStorage.flattenCourse(courseId);
 
-  const gates = await Promise.all(flat.map((item) => resolveGate(item.problemId)));
+  const metas = await Promise.all(flat.map((item) => resolveProblemMeta(item.problemId)));
   const passedFlags = await Promise.all(
-    flat.map((item, i) => isPassed(userId, courseId, item.problemId, gates[i]))
+    flat.map((item, i) => isPassed(userId, courseId, item.problemId, metas[i]))
   );
 
   let currentIndex = passedFlags.findIndex((passed) => !passed);
@@ -50,7 +70,17 @@ export async function getRoadmap(userId: string, courseId: string): Promise<Road
   for (let i = 0; i < flat.length; i++) {
     const attempts = await lmsStorage.getSubmissionsFor(userId, courseId, flat[i].problemId);
     const status: ProblemStatus = passedFlags[i] ? "done" : i === currentIndex ? "current" : "locked";
-    result.push({ ...flat[i], status, attempts: attempts.length, gate: gates[i] });
+    // Only the current item's watch-in-progress state is useful to show — a
+    // locked item can't be watched yet, and a done one no longer needs it.
+    const videoStarted = status === "current" ? await isVideoStarted(userId, metas[i]) : false;
+    result.push({
+      ...flat[i],
+      status,
+      attempts: attempts.length,
+      gate: metas[i].gate,
+      hasLecture: metas[i].hasLecture,
+      videoStarted,
+    });
   }
   return result;
 }

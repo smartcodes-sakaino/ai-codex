@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Trash2, Edit2, ChevronUp, ChevronDown, CheckCircle, Circle, GripVertical } from "lucide-react";
+import { Trash2, Edit2, ChevronUp, ChevronDown, CheckCircle, Circle, AlertTriangle, GripVertical } from "lucide-react";
 import { Link } from "wouter";
 import type { Problem } from "@shared/schema";
 import { Button } from "@/components/ui/button";
@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 interface ProblemCardProps {
   problem: Problem;
   hasExplanation: boolean;
+  hasLecture: boolean;
   editMode: boolean;
   onDelete: (id: string) => void;
   onRename: (id: string, newTitle: string) => void;
@@ -30,6 +31,7 @@ const borderColors = [
 export function ProblemCard({
   problem,
   hasExplanation,
+  hasLecture,
   editMode,
   onDelete,
   onRename,
@@ -108,6 +110,15 @@ export function ProblemCard({
                 {hasExplanation ? "解説あり" : "解説なし"}
               </span>
             </span>
+            {!hasLecture && (
+              <span
+                className="flex items-center gap-1 text-amber-600 dark:text-amber-500"
+                data-testid={`badge-no-lecture-${problem.id}`}
+              >
+                <AlertTriangle className="h-4 w-4" />
+                <span className="text-xs">講義コンテンツがありません</span>
+              </span>
+            )}
             {editMode && (
               <div className="flex items-center gap-1">
                 <Button

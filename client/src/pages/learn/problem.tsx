@@ -287,7 +287,7 @@ function LearnerVideoBlock({ block, courseId }: { block: Block; courseId?: strin
           <VideoPlayer
             src={v.videoObjectPath}
             title={v.title}
-            className="max-w-3xl mx-auto"
+            className="max-w-4xl mx-auto"
             initialTime={initialTime}
             onProgress={(seconds) => {
               lastPositionRef.current = seconds;

@@ -156,8 +156,9 @@ export class DatabaseStorage implements IStorage {
         }
         return false;
       });
-      
-      result.push({ ...problem, hasExplanation });
+      const hasLecture = problemBlocks.some((block) => block.type === "lesson" || block.type === "video");
+
+      result.push({ ...problem, hasExplanation, hasLecture });
     }
     return result;
   }
@@ -250,11 +251,13 @@ export class DatabaseStorage implements IStorage {
 
     const problemBlocks = await this.getBlocks(problemId);
     const hasExplanation = problemBlocks.some((b) => b.type === "text");
+    const hasLecture = problemBlocks.some((b) => b.type === "lesson" || b.type === "video");
 
     return {
       ...problem,
       blocks: problemBlocks,
       hasExplanation,
+      hasLecture,
     };
   }
 
