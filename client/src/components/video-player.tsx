@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Pause, Play, Volume2, VolumeX } from "lucide-react";
+import { Pause, Play, Volume2, VolumeX, Maximize, Minimize } from "lucide-react";
 
 // How often (ms) to report playback progress while the video is playing.
 const PROGRESS_REPORT_INTERVAL_MS = 5000;
@@ -24,8 +24,10 @@ interface VideoPlayerProps {
 // e-learning content where actual watch time must be genuine (subsidy/grant reporting).
 export function VideoPlayer({ src, title, className, initialTime, onProgress, onComplete }: VideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const [progressPct, setProgressPct] = useState(0);
   const hasSeekedRef = useRef(false);
   const maxTimeRef = useRef(0);
@@ -40,6 +42,19 @@ export function VideoPlayer({ src, title, className, initialTime, onProgress, on
     maxTimeRef.current = initialTime ?? 0;
     setProgressPct(0);
   }, [src, initialTime]);
+
+  // Fullscreen can also be exited via Esc or a browser-native control, so the
+  // button's icon/label is kept in sync by listening rather than only setting
+  // state from our own toggle handler.
+  useEffect(() => {
+    const handleFullscreenChange = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    document.addEventListener("webkitfullscreenchange", handleFullscreenChange);
+    return () => {
+      document.removeEventListener("fullscreenchange", handleFullscreenChange);
+      document.removeEventListener("webkitfullscreenchange", handleFullscreenChange);
+    };
+  }, []);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -122,16 +137,32 @@ export function VideoPlayer({ src, title, className, initialTime, onProgress, on
     setIsMuted(video.muted);
   };
 
+  // Fullscreen is requested on the container (not the <video> itself) so our
+  // custom control bar keeps overlaying the video instead of being replaced
+  // by the browser's native fullscreen video UI.
+  const toggleFullscreen = () => {
+    const container = containerRef.current;
+    if (!container) return;
+    if (!document.fullscreenElement) {
+      const request = container.requestFullscreen || (container as any).webkitRequestFullscreen;
+      request?.call(container);
+    } else {
+      const exit = document.exitFullscreen || (document as any).webkitExitFullscreen;
+      exit?.call(document);
+    }
+  };
+
   return (
     <div className={className}>
       <div
-        className="relative aspect-video rounded-lg overflow-hidden bg-black"
+        ref={containerRef}
+        className={`relative bg-black overflow-hidden ${isFullscreen ? "w-screen h-screen" : "aspect-video rounded-lg"}`}
         onContextMenu={(e) => e.preventDefault()}
       >
         <video
           ref={videoRef}
           src={src}
-          className="w-full h-full"
+          className={isFullscreen ? "w-full h-full object-contain" : "w-full h-full"}
           title={title}
           playsInline
           disablePictureInPicture
@@ -171,6 +202,15 @@ export function VideoPlayer({ src, title, className, initialTime, onProgress, on
             data-testid="button-video-mute"
           >
             {isMuted ? <VolumeX className="h-5 w-5" /> : <Volume2 className="h-5 w-5" />}
+          </button>
+          <button
+            type="button"
+            onClick={toggleFullscreen}
+            className="text-white hover:opacity-80 transition-opacity"
+            aria-label={isFullscreen ? "全画面を終了" : "全画面表示"}
+            data-testid="button-video-fullscreen"
+          >
+            {isFullscreen ? <Minimize className="h-5 w-5" /> : <Maximize className="h-5 w-5" />}
           </button>
         </div>
       </div>

@@ -5,7 +5,6 @@ import ReactMarkdown from "react-markdown";
 import { LearnerLayout } from "@/components/learner-layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Loader2, FileArchive, ClipboardCheck } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
@@ -20,6 +19,7 @@ import {
   type Submission,
 } from "@/lib/lmsApi";
 import { VideoPlayer } from "@/components/video-player";
+import { CodeSubmissionInput } from "@/components/code-submission-input";
 import type { Block, ProblemBlockContent, VideoBlockContent, LessonBlockContent, FileBlockContent } from "@shared/schema";
 
 export default function LearnerProblemPage() {
@@ -47,10 +47,10 @@ export default function LearnerProblemPage() {
   });
 
   const [lastResult, setLastResult] = useState<Submission | null>(null);
+  const lastSubmittedCode = submissions[submissions.length - 1]?.code;
 
   useEffect(() => {
     setLastResult(submissions[submissions.length - 1] || null);
-    if (submissions.length > 0) setCode(submissions[submissions.length - 1].code);
   }, [submissions]);
 
   const submitMutation = useMutation({
@@ -94,7 +94,6 @@ export default function LearnerProblemPage() {
     enabled: !!problemId,
   });
 
-  const passed = lastResult?.verdict === "pass";
   const currentIndex = roadmap.findIndex((r) => r.problemId === problemId);
   const nextItem = roadmap[currentIndex + 1];
   const gate = roadmap[currentIndex]?.gate;
@@ -114,15 +113,20 @@ export default function LearnerProblemPage() {
         </div>
       )}
 
+      {videoBlocks.length > 0 && (
+        <div className="space-y-5 mb-5">
+          {videoBlocks.map((b) => (
+            <LearnerVideoBlock key={b.id} block={b} courseId={courseId} />
+          ))}
+        </div>
+      )}
+
       <div className="grid md:grid-cols-2 gap-5 items-start">
         <Card>
           <CardHeader>
             <CardTitle className="text-base">問題文</CardTitle>
           </CardHeader>
           <CardContent>
-            {videoBlocks.map((b) => (
-              <LearnerVideoBlock key={b.id} block={b} courseId={courseId} />
-            ))}
             {description && (
               <p className="text-sm whitespace-pre-wrap leading-relaxed mb-4">{description}</p>
             )}
@@ -135,14 +139,7 @@ export default function LearnerProblemPage() {
             )}
             <div className="space-y-2">
               <Label>回答コード</Label>
-              <Textarea
-                rows={12}
-                value={code}
-                onChange={(e) => setCode(e.target.value)}
-                className="font-mono text-sm"
-                placeholder="ここにコードを書いて提出してください"
-                data-testid="textarea-answer-code"
-              />
+              <CodeSubmissionInput onCodeChange={setCode} initialCode={lastSubmittedCode} />
             </div>
             {gate && gate !== "submission" && (
               <p className="text-xs text-muted-foreground mt-2">
@@ -283,29 +280,32 @@ function LearnerVideoBlock({ block, courseId }: { block: Block; courseId?: strin
   });
 
   return (
-    <div className="mb-4 space-y-2">
-      {v.title && <h3 className="text-base font-semibold">{v.title}</h3>}
-      {v.videoObjectPath && (
-        <VideoPlayer
-          src={v.videoObjectPath}
-          title={v.title}
-          initialTime={initialTime}
-          onProgress={(seconds) => {
-            lastPositionRef.current = seconds;
-            saveVideoProgress(block.id, seconds).catch((err) => console.error("Failed to save video progress:", err));
-          }}
-          onComplete={() => {
-            saveVideoProgress(block.id, lastPositionRef.current, true)
-              .then(() => {
-                queryClient.invalidateQueries({ queryKey: ["/api/my/courses", courseId, "roadmap"] });
-                queryClient.invalidateQueries({ queryKey: ["/api/my/courses"] });
-              })
-              .catch((err) => console.error("Failed to save video completion:", err));
-          }}
-        />
-      )}
-      {v.description && <p className="text-sm whitespace-pre-wrap leading-relaxed">{v.description}</p>}
-    </div>
+    <Card>
+      <CardContent className="pt-6 space-y-3">
+        {v.title && <h3 className="text-lg font-semibold">{v.title}</h3>}
+        {v.videoObjectPath && (
+          <VideoPlayer
+            src={v.videoObjectPath}
+            title={v.title}
+            className="max-w-3xl mx-auto"
+            initialTime={initialTime}
+            onProgress={(seconds) => {
+              lastPositionRef.current = seconds;
+              saveVideoProgress(block.id, seconds).catch((err) => console.error("Failed to save video progress:", err));
+            }}
+            onComplete={() => {
+              saveVideoProgress(block.id, lastPositionRef.current, true)
+                .then(() => {
+                  queryClient.invalidateQueries({ queryKey: ["/api/my/courses", courseId, "roadmap"] });
+                  queryClient.invalidateQueries({ queryKey: ["/api/my/courses"] });
+                })
+                .catch((err) => console.error("Failed to save video completion:", err));
+            }}
+          />
+        )}
+        {v.description && <p className="text-sm whitespace-pre-wrap leading-relaxed">{v.description}</p>}
+      </CardContent>
+    </Card>
   );
 }
 
