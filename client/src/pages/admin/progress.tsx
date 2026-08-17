@@ -26,7 +26,36 @@ import {
   fetchCourseProgress,
   fetchCourseProgressDetail,
   exportCourseProgressSheet,
+  type ProgressDetailItem,
 } from "@/lib/lmsApi";
+
+// The submission-based 合格/不合格/未提出 labels only make sense when the
+// problem is actually gated by a code submission — a video- or self-review-
+// gated item's submission history is just optional practice, so it needs its
+// own labels reflecting what's actually blocking it from being "done".
+function renderProgressStatus(item: ProgressDetailItem) {
+  if (item.status === "done") {
+    return <Badge className="bg-[#E3F5E6] text-[#2F9E44] border-transparent">合格</Badge>;
+  }
+  if (item.status === "locked") {
+    return <Badge variant="secondary">ロック中</Badge>;
+  }
+  if (item.gate === "video") {
+    return item.videoStarted ? (
+      <Badge className="bg-[#FDE6D3] text-[#E8722C] border-transparent">視聴中</Badge>
+    ) : (
+      <Badge variant="secondary">未視聴</Badge>
+    );
+  }
+  if (item.gate === "self_review") {
+    return <Badge variant="secondary">セルフレビュー待ち</Badge>;
+  }
+  return item.attempts > 0 ? (
+    <Badge className="bg-[#FDECEC] text-[#E03131] border-transparent">不合格</Badge>
+  ) : (
+    <Badge variant="secondary">未提出</Badge>
+  );
+}
 
 export default function AdminProgressPage() {
   const { toast } = useToast();
@@ -148,15 +177,7 @@ export default function AdminProgressPage() {
                                   {detail.map((item) => (
                                     <TableRow key={item.problemId}>
                                       <TableCell>{item.problemTitle}</TableCell>
-                                      <TableCell>
-                                        {item.status === "done" ? (
-                                          <Badge className="bg-[#E3F5E6] text-[#2F9E44] border-transparent">合格</Badge>
-                                        ) : item.attempts > 0 ? (
-                                          <Badge className="bg-[#FDECEC] text-[#E03131] border-transparent">不合格</Badge>
-                                        ) : (
-                                          <Badge variant="secondary">未提出</Badge>
-                                        )}
-                                      </TableCell>
+                                      <TableCell>{renderProgressStatus(item)}</TableCell>
                                       <TableCell>{item.attempts}回</TableCell>
                                       <TableCell className="max-w-xs text-xs text-muted-foreground truncate">
                                         {item.submissions[item.submissions.length - 1]?.aiSummary || "—"}
