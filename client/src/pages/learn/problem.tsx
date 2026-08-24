@@ -55,6 +55,34 @@ export default function LearnerProblemPage() {
     setLastResult(submissions[submissions.length - 1] || null);
   }, [submissions]);
 
+  // Lifted up (rather than owned inside LearnerVideoBlock) so the "次へ" card
+  // can show a spinner for the whole round-trip: saving the completion, then
+  // waiting for the roadmap refetch it triggers, since canAdvance depends on
+  // that fresh roadmap data, not just the save succeeding. A plain boolean
+  // (not mutation.isPending/isSuccess) because those flags would keep reading
+  // "true" across a later navigation to a different problem — this page
+  // component isn't remounted when only the :problemId param changes.
+  const [isCheckingVideoGate, setIsCheckingVideoGate] = useState(false);
+  useEffect(() => {
+    setIsCheckingVideoGate(false);
+  }, [problemId]);
+
+  const handleVideoComplete = async (blockId: string, seconds: number) => {
+    setIsCheckingVideoGate(true);
+    try {
+      await saveVideoProgress(blockId, seconds, true);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["/api/my/courses", courseId, "roadmap"] }),
+        queryClient.invalidateQueries({ queryKey: ["/api/my/courses"] }),
+      ]);
+    } catch (err) {
+      console.error("Failed to save video completion:", err);
+      toast({ title: "動画の完了状態の保存に失敗しました。もう一度お試しください", variant: "destructive" });
+    } finally {
+      setIsCheckingVideoGate(false);
+    }
+  };
+
   const submitMutation = useMutation({
     mutationFn: () => submitAnswer(courseId, problemId, code),
     onSuccess: (result) => {
@@ -118,7 +146,7 @@ export default function LearnerProblemPage() {
       {videoBlocks.length > 0 && (
         <div className="space-y-5 mb-5">
           {videoBlocks.map((b) => (
-            <LearnerVideoBlock key={b.id} block={b} courseId={courseId} />
+            <LearnerVideoBlock key={b.id} block={b} onComplete={handleVideoComplete} />
           ))}
         </div>
       )}
@@ -208,7 +236,13 @@ export default function LearnerProblemPage() {
                 self-review-gated problem can become "done" with no code
                 submission at all (submitting is optional practice there),
                 so this must not depend on lastResult being set. */}
-            {canAdvance &&
+            {isCheckingVideoGate ? (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground mt-2">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                視聴の完了を確認しています...
+              </div>
+            ) : (
+              canAdvance &&
               (nextItem ? (
                 <Link href={`/learn/courses/${courseId}/problems/${nextItem.problemId}`}>
                   <Button className="mt-2 bg-gradient-to-r from-[#FF8C42] to-[#FFA566] text-white" data-testid="button-next-problem">
@@ -223,7 +257,8 @@ export default function LearnerProblemPage() {
                 >
                   修了証を見る 🎓
                 </Button>
-              ))}
+              ))
+            )}
           </CardContent>
         </Card>
       </div>
@@ -288,7 +323,7 @@ function LearnerFileBlock({ block }: { block: Block }) {
   );
 }
 
-function LearnerVideoBlock({ block, courseId }: { block: Block; courseId?: string }) {
+function LearnerVideoBlock({ block, onComplete }: { block: Block; onComplete: (blockId: string, seconds: number) => void }) {
   const v = block.content as VideoBlockContent;
   const lastPositionRef = useRef(0);
 
@@ -311,14 +346,7 @@ function LearnerVideoBlock({ block, courseId }: { block: Block; courseId?: strin
               lastPositionRef.current = seconds;
               saveVideoProgress(block.id, seconds).catch((err) => console.error("Failed to save video progress:", err));
             }}
-            onComplete={() => {
-              saveVideoProgress(block.id, lastPositionRef.current, true)
-                .then(() => {
-                  queryClient.invalidateQueries({ queryKey: ["/api/my/courses", courseId, "roadmap"] });
-                  queryClient.invalidateQueries({ queryKey: ["/api/my/courses"] });
-                })
-                .catch((err) => console.error("Failed to save video completion:", err));
-            }}
+            onComplete={() => onComplete(block.id, lastPositionRef.current)}
           />
         )}
         {v.description && <p className="text-sm whitespace-pre-wrap leading-relaxed">{v.description}</p>}
