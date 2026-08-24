@@ -9,6 +9,7 @@ export interface AuthUser {
   name: string;
   email: string;
   role: "admin" | "learner";
+  mustChangePassword: boolean;
 }
 
 export interface LmsUser {
@@ -104,6 +105,11 @@ export async function login(email: string, password: string): Promise<AuthUser> 
 
 export async function logout(): Promise<void> {
   await apiRequest("POST", "/api/auth/logout");
+}
+
+export async function changePassword(currentPassword: string, newPassword: string): Promise<AuthUser> {
+  const res = await apiRequest("POST", "/api/auth/change-password", { currentPassword, newPassword });
+  return res.json();
 }
 
 export async function fetchMe(): Promise<AuthUser | null> {

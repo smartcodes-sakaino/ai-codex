@@ -315,6 +315,11 @@ export const loginSchema = z.object({
   password: z.string().min(1, "パスワードを入力してください"),
 });
 
+export const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1, "現在のパスワードを入力してください"),
+  newPassword: z.string().min(8, "新しいパスワードは8文字以上で入力してください").max(200),
+});
+
 export const submitAnswerSchema = z.object({
   code: z.string().min(1, "コードを入力してください").max(200000, "コードが長すぎます"),
 });
@@ -451,6 +456,7 @@ export type VideoProgress = typeof videoProgress.$inferSelect;
 export type SelfReviewSubmission = typeof selfReviewSubmissions.$inferSelect;
 
 export type LoginInput = z.infer<typeof loginSchema>;
+export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
 export type SubmitAnswerInput = z.infer<typeof submitAnswerSchema>;
 export type UpdateVideoProgressInput = z.infer<typeof updateVideoProgressSchema>;
 export type SubmitSelfReviewInput = z.infer<typeof submitSelfReviewSchema>;

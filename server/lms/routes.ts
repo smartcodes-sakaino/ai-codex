@@ -6,6 +6,7 @@ import {
   insertCourseSchema,
   insertSettingsSchema,
   loginSchema,
+  changePasswordSchema,
   submitAnswerSchema,
   updateVideoProgressSchema,
 } from "@shared/schema";
@@ -50,7 +51,7 @@ export function registerLmsRoutes(app: Express): void {
         console.error("Session save error:", err);
         return res.status(500).json({ error: "セッションの保存に失敗しました" });
       }
-      res.json({ id: user.id, name: user.name, email: user.email, role: user.role });
+      res.json({ id: user.id, name: user.name, email: user.email, role: user.role, mustChangePassword: !!user.tempPassword });
     });
   });
 
@@ -62,7 +63,28 @@ export function registerLmsRoutes(app: Express): void {
 
   app.get("/api/auth/me", requireAuth, async (req: AuthedRequest, res: Response) => {
     const u = req.user!;
-    res.json({ id: u.id, name: u.name, email: u.email, role: u.role });
+    res.json({ id: u.id, name: u.name, email: u.email, role: u.role, mustChangePassword: !!u.tempPassword });
+  });
+
+  // Available to any logged-in user (admin or learner) — both start from an
+  // admin-generated temp password, and this is also how mustChangePassword
+  // gets cleared after a forced first-login change.
+  app.post("/api/auth/change-password", requireAuth, async (req: AuthedRequest, res: Response) => {
+    const parsed = changePasswordSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: parsed.error.errors[0]?.message || "入力が無効です" });
+    }
+    const user = req.user!;
+    const valid = await verifyPassword(parsed.data.currentPassword, user.passwordHash);
+    if (!valid) {
+      return res.status(400).json({ error: "現在のパスワードが正しくありません" });
+    }
+    const passwordHash = await hashPassword(parsed.data.newPassword);
+    const updated = await lmsStorage.setPassword(user.id, passwordHash);
+    if (!updated) {
+      return res.status(404).json({ error: "ユーザーが見つかりません" });
+    }
+    res.json({ id: updated.id, name: updated.name, email: updated.email, role: updated.role, mustChangePassword: false });
   });
 
   // ============================================

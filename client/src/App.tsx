@@ -12,6 +12,7 @@ import SettingsPage from "@/pages/settings";
 import SelfReviewPage from "@/pages/self-review";
 import NotFound from "@/pages/not-found";
 import LoginPage from "@/pages/login";
+import ChangePasswordPage from "@/pages/change-password";
 import AdminDashboardPage from "@/pages/admin/dashboard";
 import AdminCoursesPage from "@/pages/admin/courses";
 import AdminMembersPage from "@/pages/admin/members";
@@ -26,6 +27,7 @@ function Router() {
   return (
     <Switch>
       <Route path="/login" component={LoginPage} />
+      <Route path="/change-password" component={ChangePasswordPage} />
       <Route path="/self-review/:token" component={SelfReviewPage} />
 
       <Route path="/" component={() => <RequireRole role="admin"><Dashboard /></RequireRole>} />

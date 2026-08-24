@@ -18,7 +18,7 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (!isLoading && user) {
-      navigate(user.role === "admin" ? "/admin" : "/learn");
+      navigate(user.mustChangePassword ? "/change-password" : user.role === "admin" ? "/admin" : "/learn");
     }
   }, [isLoading, user, navigate]);
 
@@ -28,7 +28,7 @@ export default function LoginPage() {
     setIsSubmitting(true);
     try {
       const loggedInUser = await login(email, password);
-      navigate(loggedInUser.role === "admin" ? "/admin" : "/learn");
+      navigate(loggedInUser.mustChangePassword ? "/change-password" : loggedInUser.role === "admin" ? "/admin" : "/learn");
     } catch (err) {
       setError("メールアドレスまたはパスワードが正しくありません");
     } finally {

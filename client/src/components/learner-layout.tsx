@@ -1,5 +1,5 @@
 import { Link } from "wouter";
-import { LogOut, LayoutDashboard } from "lucide-react";
+import { LogOut, LayoutDashboard, KeyRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/use-auth";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -44,6 +44,11 @@ export function LearnerLayout({
               </Button>
             </Link>
           )}
+          <Link href="/change-password">
+            <Button variant="ghost" size="icon" aria-label="パスワード変更" data-testid="button-change-password">
+              <KeyRound className="h-4 w-4" />
+            </Button>
+          </Link>
           <ThemeToggle />
           <Button variant="ghost" size="sm" onClick={() => logout()} data-testid="button-logout">
             <LogOut className="h-4 w-4 mr-2" />

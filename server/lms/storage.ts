@@ -116,6 +116,19 @@ export const lmsStorage = {
     return updated || undefined;
   },
 
+  // Used when the user sets their own password (as opposed to an admin
+  // regenerating a temp one) — clears tempPassword so the member list stops
+  // showing a now-stale plaintext password, and so mustChangePassword (which
+  // is just "tempPassword is set") turns off.
+  async setPassword(userId: string, passwordHash: string): Promise<User | undefined> {
+    const [updated] = await db
+      .update(users)
+      .set({ passwordHash, tempPassword: null })
+      .where(eq(users.id, userId))
+      .returning();
+    return updated || undefined;
+  },
+
   // ============================================
   // Groups
   // ============================================

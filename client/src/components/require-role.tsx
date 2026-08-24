@@ -18,12 +18,14 @@ export function RequireRole({ role, children }: RequireRoleProps) {
     if (isLoading) return;
     if (!user) {
       navigate("/login");
+    } else if (user.mustChangePassword) {
+      navigate("/change-password");
     } else if (!isAllowed) {
       navigate(user.role === "admin" ? "/admin" : "/learn");
     }
   }, [isLoading, user, isAllowed, navigate]);
 
-  if (isLoading || !user || !isAllowed) {
+  if (isLoading || !user || user.mustChangePassword || !isAllowed) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />

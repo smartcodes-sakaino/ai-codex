@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
-import { Menu, LayoutDashboard, BookOpen, GraduationCap, Users, BarChart3, Sparkles, Award, LogOut, PlayCircle } from "lucide-react";
+import { Menu, LayoutDashboard, BookOpen, GraduationCap, Users, BarChart3, Sparkles, Award, LogOut, PlayCircle, KeyRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { useAuth } from "@/hooks/use-auth";
@@ -68,6 +68,17 @@ export function AdminNavMenu() {
         </nav>
         <div className="mt-auto absolute bottom-0 left-0 right-0 p-3 border-t border-[#F0C63A]/50">
           <div className="px-2 pb-2 text-xs text-[#5B4200] dark:text-[#E8D9A6] truncate">{user?.name}</div>
+          <Link href="/change-password" onClick={() => setOpen(false)}>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="w-full justify-start text-[#5B4200] dark:text-[#E8D9A6] hover:bg-white/40 dark:hover:bg-black/20"
+              data-testid="button-change-password"
+            >
+              <KeyRound className="h-4 w-4 mr-2" />
+              パスワード変更
+            </Button>
+          </Link>
           <Button
             variant="ghost"
             size="sm"
