@@ -170,6 +170,7 @@ export default function AdminProgressPage() {
                                     <TableHead>問題</TableHead>
                                     <TableHead>状態</TableHead>
                                     <TableHead>挑戦回数</TableHead>
+                                    <TableHead>AI質問回数</TableHead>
                                     <TableHead>直近のAI判定</TableHead>
                                   </TableRow>
                                 </TableHeader>
@@ -179,6 +180,7 @@ export default function AdminProgressPage() {
                                       <TableCell>{item.problemTitle}</TableCell>
                                       <TableCell>{renderProgressStatus(item)}</TableCell>
                                       <TableCell>{item.attempts}回</TableCell>
+                                      <TableCell>{item.aiQuestionCount}回</TableCell>
                                       <TableCell className="max-w-xs text-xs text-muted-foreground truncate">
                                         {item.submissions[item.submissions.length - 1]?.aiSummary || "—"}
                                       </TableCell>

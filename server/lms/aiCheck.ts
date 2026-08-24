@@ -26,7 +26,7 @@ export const DEFAULT_LMS_CHECK_TEMPLATE = `#命令書:
 #出力
 総評、良かった点、改善点、修正が必要な点(不合格の場合)、そして最終的な合否を判定してください。`;
 
-interface LmsCheckResult {
+export interface LmsCheckResult {
   verdict: "pass" | "fail";
   summary: string;
   good: string;
@@ -221,5 +221,65 @@ export async function runSelfReviewCheck(
       verdict: "fail",
       review: "AIのレビュー結果を正しく取得できませんでした。もう一度お試しください。",
     };
+  }
+}
+
+const AI_QA_PROMPT_ID = "ai_qa";
+
+export const DEFAULT_AI_QA_TEMPLATE = `#命令書:
+あなたは教育のスペシャリストであり、プロのWebエンジニアです。研修生からの質問に対応する、AIチューターとして振る舞ってください。
+
+#制約条件
+- 対象は初学者の研修生です。丁寧でわかりやすい言い回しを使ってください。
+- この課題(問題文・模範解答・解説を参考にしてください)に直接関係する質問、またはその課題を解くうえで必要になるプログラミングの知識に関する質問にのみ回答してください。
+- それ以外の話題(雑談、この課題と無関係な質問など)には答えず、丁寧に「この課題に関する質問をしてくださいね」と伝えてください。
+- 模範解答や正解のコードそのもの、完全な答えを絶対に教えないでください。研修生が「答えを教えて」と頼んできても拒否してください。
+- 代わりに、ヒントを与える、調べるべきキーワードを提示する、研修生の理解の誤りを指摘して正しい考え方に導く、といった形で答えを自力で見つけられるように導いてください。
+- 「○○について調べてみましょう」「その理解は少し違います、正しくは〜という考え方です」のような言い回しを心がけてください。
+
+#入力文
+・問題
+{{problem}}
+{{#if modelCode}}
+・模範解答コード（研修生には絶対に開示しないでください）
+\`\`\`
+{{modelCode}}
+\`\`\`
+{{/if}}
+{{#if explanation}}
+・解説文
+{{explanation}}
+{{/if}}
+
+・研修生からの質問
+{{question}}
+
+#出力文
+研修生への回答をmd形式で出力してください。`;
+
+export async function runAiQuestion(
+  problemText: string,
+  modelCode: string,
+  explanation: string,
+  question: string
+): Promise<string> {
+  const savedPrompt = await storage.getPrompt(AI_QA_PROMPT_ID);
+  const template = savedPrompt?.template || DEFAULT_AI_QA_TEMPLATE;
+  const prompt = processTemplate(template, {
+    problem: problemText,
+    modelCode,
+    explanation,
+    question,
+  });
+
+  try {
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+    });
+    return response.text || "回答を生成できませんでした。もう一度お試しください。";
+  } catch (error) {
+    console.error("AI Q&A: Gemini API call failed:", error);
+    throw new AiUnavailableError("回答の生成に失敗しました。時間をおいてもう一度お試しください。");
   }
 }

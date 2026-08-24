@@ -10,6 +10,7 @@ import {
   settings,
   videoProgress,
   selfReviewSubmissions,
+  aiQuestions,
   chapters,
   problems,
   type User,
@@ -20,6 +21,7 @@ import {
   type Settings as SettingsRow,
   type VideoProgress,
   type SelfReviewSubmission,
+  type AiQuestion,
   type UserWithGroups,
   type CourseWithDetails,
 } from "@shared/schema";
@@ -477,5 +479,33 @@ export const lmsStorage = {
       .values({ id: randomUUID(), ...data })
       .returning();
     return created;
+  },
+
+  // ============================================
+  // AI question-corner questions
+  // ============================================
+
+  async createAiQuestion(data: {
+    userId: string;
+    problemId: string;
+    question: string;
+    answer: string;
+  }): Promise<AiQuestion> {
+    const [created] = await db
+      .insert(aiQuestions)
+      .values({ id: randomUUID(), ...data })
+      .returning();
+    return created;
+  },
+
+  // Admin-only metric — how many questions a learner has asked on a given
+  // problem, shown alongside grading progress but never surfaced to the
+  // learner themselves.
+  async getAiQuestionCountFor(userId: string, problemId: string): Promise<number> {
+    const rows = await db
+      .select({ id: aiQuestions.id })
+      .from(aiQuestions)
+      .where(and(eq(aiQuestions.userId, userId), eq(aiQuestions.problemId, problemId)));
+    return rows.length;
   },
 };

@@ -213,6 +213,8 @@ export async function fetchCourseProgress(courseId: string): Promise<ProgressSum
 
 export interface ProgressDetailItem extends RoadmapItem {
   submissions: Submission[];
+  /** Admin-only — never shown to the learner themselves. */
+  aiQuestionCount: number;
 }
 
 export async function fetchCourseProgressDetail(courseId: string, userId: string): Promise<ProgressDetailItem[]> {
@@ -304,4 +306,13 @@ export async function fetchVideoProgress(blockId: string): Promise<number> {
 
 export async function saveVideoProgress(blockId: string, positionSeconds: number, completed?: boolean): Promise<void> {
   await apiRequest("PUT", `/api/my/video-progress/${blockId}`, { positionSeconds, completed });
+}
+
+// ============================================
+// Learner: AI question corner
+// ============================================
+
+export async function askAiQuestion(problemId: string, question: string): Promise<{ answer: string }> {
+  const res = await apiRequest("POST", `/api/my/problems/${problemId}/ask`, { question });
+  return res.json();
 }

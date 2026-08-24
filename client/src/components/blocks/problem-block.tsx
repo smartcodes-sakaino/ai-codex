@@ -318,6 +318,19 @@ export function ProblemBlock({
         )}
 
         <div className="space-y-2">
+          <Label>正解文字列（任意）</Label>
+          <Input
+            value={content.expectedAnswer || ""}
+            onChange={(e) => onUpdate({ ...content, expectedAnswer: e.target.value })}
+            placeholder="例: 読みました"
+            data-testid={`input-expected-answer-${block.id}`}
+          />
+          <p className="text-xs text-muted-foreground">
+            設定すると、AI採点の代わりにこの文字列との完全一致（前後の空白を除く）で合否を判定します。「読みました」のような確認用の問題に向いています。空欄のままなら、これまで通りAIが採点します。
+          </p>
+        </div>
+
+        <div className="space-y-2">
           <Label>画像ギャラリー（本文とは別に一覧表示されます）</Label>
           <div
             className={`border-2 border-dashed border-muted-foreground/25 rounded-lg p-4 text-center cursor-pointer hover:border-muted-foreground/50 transition-colors ${isUploadingImage ? 'opacity-50 pointer-events-none' : ''}`}

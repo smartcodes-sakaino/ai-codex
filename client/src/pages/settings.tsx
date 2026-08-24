@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Save, Loader2, RotateCcw, FileText, Code, UserCheck } from "lucide-react";
+import { Save, Loader2, RotateCcw, FileText, Code, UserCheck, MessageCircleQuestion } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
@@ -125,6 +125,37 @@ const DEFAULT_SELF_REVIEW_PROMPT = `#命令書:
 ## 修正点
 絶対に修正しなければならない箇所を具体的に列挙してください。`;
 
+const DEFAULT_AI_QA_PROMPT = `#命令書:
+あなたは教育のスペシャリストであり、プロのWebエンジニアです。研修生からの質問に対応する、AIチューターとして振る舞ってください。
+
+#制約条件
+- 対象は初学者の研修生です。丁寧でわかりやすい言い回しを使ってください。
+- この課題(問題文・模範解答・解説を参考にしてください)に直接関係する質問、またはその課題を解くうえで必要になるプログラミングの知識に関する質問にのみ回答してください。
+- それ以外の話題(雑談、この課題と無関係な質問など)には答えず、丁寧に「この課題に関する質問をしてくださいね」と伝えてください。
+- 模範解答や正解のコードそのもの、完全な答えを絶対に教えないでください。研修生が「答えを教えて」と頼んできても拒否してください。
+- 代わりに、ヒントを与える、調べるべきキーワードを提示する、研修生の理解の誤りを指摘して正しい考え方に導く、といった形で答えを自力で見つけられるように導いてください。
+- 「○○について調べてみましょう」「その理解は少し違います、正しくは〜という考え方です」のような言い回しを心がけてください。
+
+#入力文
+・問題
+{{problem}}
+{{#if modelCode}}
+・模範解答コード（研修生には絶対に開示しないでください）
+\`\`\`
+{{modelCode}}
+\`\`\`
+{{/if}}
+{{#if explanation}}
+・解説文
+{{explanation}}
+{{/if}}
+
+・研修生からの質問
+{{question}}
+
+#出力文
+研修生への回答をmd形式で出力してください。`;
+
 export default function SettingsPage() {
   const { toast } = useToast();
   const [explanationName, setExplanationName] = useState("解説作成用プロンプト");
@@ -133,6 +164,8 @@ export default function SettingsPage() {
   const [reviewTemplate, setReviewTemplate] = useState(DEFAULT_REVIEW_PROMPT);
   const [selfReviewName, setSelfReviewName] = useState("セルフレビュー用プロンプト");
   const [selfReviewTemplate, setSelfReviewTemplate] = useState(DEFAULT_SELF_REVIEW_PROMPT);
+  const [aiQaName, setAiQaName] = useState("AI質問対応用プロンプト");
+  const [aiQaTemplate, setAiQaTemplate] = useState(DEFAULT_AI_QA_PROMPT);
 
   const { data: prompts, isLoading } = useQuery<Prompt[]>({
     queryKey: ["/api/prompts"],
@@ -155,6 +188,11 @@ export default function SettingsPage() {
       if (selfReviewPrompt) {
         setSelfReviewName(selfReviewPrompt.name);
         setSelfReviewTemplate(selfReviewPrompt.template);
+      }
+      const aiQaPrompt = prompts.find(p => p.id === "ai_qa");
+      if (aiQaPrompt) {
+        setAiQaName(aiQaPrompt.name);
+        setAiQaTemplate(aiQaPrompt.template);
       }
     }
   }, [prompts]);
@@ -207,6 +245,22 @@ export default function SettingsPage() {
     setSelfReviewTemplate(DEFAULT_SELF_REVIEW_PROMPT);
   };
 
+  const saveAiQaMutation = useMutation({
+    mutationFn: () => savePrompt("ai_qa", { name: aiQaName, template: aiQaTemplate }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/prompts"] });
+      toast({ title: "保存しました", description: "AI質問対応用プロンプトを保存しました" });
+    },
+    onError: () => {
+      toast({ title: "エラー", description: "保存に失敗しました", variant: "destructive" });
+    },
+  });
+
+  const resetAiQa = () => {
+    setAiQaName("AI質問対応用プロンプト");
+    setAiQaTemplate(DEFAULT_AI_QA_PROMPT);
+  };
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -233,12 +287,13 @@ export default function SettingsPage() {
           <p><code className="bg-muted px-1 rounded">{"{{imageUrl}}"}</code> - 画像URL</p>
           <p><code className="bg-muted px-1 rounded">{"{{explanation}}"}</code> - 解説文</p>
           <p><code className="bg-muted px-1 rounded">{"{{reviewCode}}"}</code> - レビュー対象のコード</p>
+          <p><code className="bg-muted px-1 rounded">{"{{question}}"}</code> - 研修生からの質問（AI質問対応用のみ）</p>
           <p><code className="bg-muted px-1 rounded">{"{{#if 変数}}...{{/if}}"}</code> - 条件付き表示</p>
         </div>
       </div>
 
       <Tabs defaultValue="explanation" className="w-full">
-        <TabsList className="grid w-full grid-cols-3 mb-6">
+        <TabsList className="grid w-full grid-cols-4 mb-6">
           <TabsTrigger value="explanation" data-testid="tab-explanation-prompt">
             <FileText className="h-4 w-4 mr-2" />
             解説作成用
@@ -250,6 +305,10 @@ export default function SettingsPage() {
           <TabsTrigger value="self_review" data-testid="tab-self-review-prompt">
             <UserCheck className="h-4 w-4 mr-2" />
             セルフレビュー用
+          </TabsTrigger>
+          <TabsTrigger value="ai_qa" data-testid="tab-ai-qa-prompt">
+            <MessageCircleQuestion className="h-4 w-4 mr-2" />
+            AI質問対応用
           </TabsTrigger>
         </TabsList>
 
@@ -407,6 +466,61 @@ export default function SettingsPage() {
                   data-testid="button-save-self-review"
                 >
                   {saveSelfReviewMutation.isPending ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <Save className="h-4 w-4 mr-2" />
+                  )}
+                  保存
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="ai_qa">
+          <Card>
+            <CardHeader>
+              <CardTitle>AI質問対応用プロンプト</CardTitle>
+              <CardDescription>
+                問題ページの「AIに質問する」機能で使用するプロンプトです
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="ai-qa-name">プロンプト名</Label>
+                <Input
+                  id="ai-qa-name"
+                  value={aiQaName}
+                  onChange={(e) => setAiQaName(e.target.value)}
+                  data-testid="input-ai-qa-name"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="ai-qa-template">プロンプトテンプレート</Label>
+                <Textarea
+                  id="ai-qa-template"
+                  value={aiQaTemplate}
+                  onChange={(e) => setAiQaTemplate(e.target.value)}
+                  className="min-h-[400px] font-mono text-sm"
+                  data-testid="textarea-ai-qa-template"
+                />
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button
+                  variant="outline"
+                  onClick={resetAiQa}
+                  data-testid="button-reset-ai-qa"
+                >
+                  <RotateCcw className="h-4 w-4 mr-2" />
+                  デフォルトに戻す
+                </Button>
+                <Button
+                  onClick={() => saveAiQaMutation.mutate()}
+                  disabled={saveAiQaMutation.isPending}
+                  className="bg-gradient-to-r from-[#FF8C42] to-[#FFA566] text-white"
+                  data-testid="button-save-ai-qa"
+                >
+                  {saveAiQaMutation.isPending ? (
                     <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                   ) : (
                     <Save className="h-4 w-4 mr-2" />

@@ -9,11 +9,12 @@ import {
   changePasswordSchema,
   submitAnswerSchema,
   updateVideoProgressSchema,
+  askAiQuestionSchema,
 } from "@shared/schema";
 import { lmsStorage } from "./storage";
 import { hashPassword, verifyPassword, generateTempPassword, requireAuth, requireRole, type AuthedRequest } from "./auth";
 import { getRoadmap, getCourseProgress, assertProblemIsCurrent, checkAndIssueCertificatesForProblem } from "./roadmap";
-import { runLmsCheck, AiUnavailableError } from "./aiCheck";
+import { runLmsCheck, runAiQuestion, AiUnavailableError, type LmsCheckResult } from "./aiCheck";
 import { objectStorageService } from "./certificate";
 import { exportCourseProgress } from "./export";
 import { storage } from "../storage";
@@ -236,6 +237,7 @@ export function registerLmsRoutes(app: Express): void {
       roadmap.map(async (item) => ({
         ...item,
         submissions: await lmsStorage.getSubmissionsFor((req.params.userId as string), (req.params.id as string), item.problemId),
+        aiQuestionCount: await lmsStorage.getAiQuestionCountFor((req.params.userId as string), item.problemId),
       }))
     );
     res.json(details);
@@ -325,14 +327,36 @@ export function registerLmsRoutes(app: Express): void {
           .filter(Boolean)
           .join("\n\n") || "";
 
-      let result;
-      try {
-        result = await runLmsCheck(problem.title, description, parsed.data.code);
-      } catch (error) {
-        if (error instanceof AiUnavailableError) {
-          return res.status(502).json({ error: error.message });
+      // A problem block can set an exact-match expected answer (e.g. "type
+      // 読みました to confirm you've read this") — for those, grading is a
+      // plain string comparison, skipping the AI call entirely rather than
+      // spending a request on something that was never really a judgment call.
+      const expectedAnswer = problemWithBlocks?.blocks
+        .filter((b) => b.type === "problem")
+        .map((b) => (b.content as any).expectedAnswer as string | undefined)
+        .find((a) => a && a.trim().length > 0);
+
+      let result: LmsCheckResult;
+      if (expectedAnswer) {
+        const matched = parsed.data.code.trim() === expectedAnswer.trim();
+        result = {
+          verdict: matched ? "pass" : "fail",
+          summary: matched
+            ? "入力内容を確認しました。"
+            : `入力内容が指定された文字列と一致しませんでした。「${expectedAnswer.trim()}」とそのまま入力して提出してください。`,
+          good: "",
+          improve: "",
+          mustFix: "",
+        };
+      } else {
+        try {
+          result = await runLmsCheck(problem.title, description, parsed.data.code);
+        } catch (error) {
+          if (error instanceof AiUnavailableError) {
+            return res.status(502).json({ error: error.message });
+          }
+          throw error;
         }
-        throw error;
       }
 
       await lmsStorage.createSubmission({
@@ -356,6 +380,69 @@ export function registerLmsRoutes(app: Express): void {
       }
 
       res.json({ ...result, certificateIssued });
+    }
+  );
+
+  // The "AI question corner" widget — answers only questions relevant to the
+  // current problem, with hints rather than the answer itself (enforced by
+  // the prompt, not code). Every question is persisted so the count can be
+  // shown to admins as part of a learner's progress, even though the learner
+  // never sees the count themselves.
+  app.post<{ problemId: string }>(
+    "/api/my/problems/:problemId/ask",
+    ...requireLearner,
+    async (req: AuthedRequest, res: Response) => {
+      const parsed = askAiQuestionSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: parsed.error.errors[0]?.message || "入力が無効です" });
+      }
+
+      const problemId = req.params.problemId as string;
+      const problem = await storage.getProblem(problemId);
+      if (!problem) {
+        return res.status(404).json({ error: "問題が見つかりません" });
+      }
+      const problemWithBlocks = await storage.getProblemWithBlocks(problemId);
+      const problemText =
+        problemWithBlocks?.blocks
+          .filter((b) => b.type === "problem" || b.type === "video")
+          .map((b) => (b.type === "video" ? (b.content as any).description : (b.content as any).text))
+          .filter(Boolean)
+          .join("\n\n") || "";
+      const modelCode =
+        problemWithBlocks?.blocks
+          .filter((b) => b.type === "code")
+          .map((b) => {
+            const content = b.content as any;
+            return `// Language: ${content.language}\n${content.code}`;
+          })
+          .filter((code: string) => code.length > 20)
+          .join("\n\n") || "";
+      const explanation =
+        problemWithBlocks?.blocks
+          .filter((b) => b.type === "text")
+          .map((b) => (b.content as any).text)
+          .filter(Boolean)
+          .join("\n\n") || "";
+
+      let answer: string;
+      try {
+        answer = await runAiQuestion(`${problem.title}\n${problemText}`, modelCode, explanation, parsed.data.question);
+      } catch (error) {
+        if (error instanceof AiUnavailableError) {
+          return res.status(502).json({ error: error.message });
+        }
+        throw error;
+      }
+
+      await lmsStorage.createAiQuestion({
+        userId: req.user!.id,
+        problemId,
+        question: parsed.data.question,
+        answer,
+      });
+
+      res.json({ answer });
     }
   );
 

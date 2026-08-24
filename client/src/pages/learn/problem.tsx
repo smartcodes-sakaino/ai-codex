@@ -21,6 +21,7 @@ import {
 } from "@/lib/lmsApi";
 import { VideoPlayer } from "@/components/video-player";
 import { CodeSubmissionInput } from "@/components/code-submission-input";
+import { AiQuestionWidget } from "@/components/ai-question-widget";
 import type { Block, ProblemBlockContent, VideoBlockContent, LessonBlockContent, FileBlockContent } from "@shared/schema";
 
 export default function LearnerProblemPage() {
@@ -41,7 +42,7 @@ export default function LearnerProblemPage() {
     enabled: !!courseId,
   });
 
-  const { data: submissions = [] } = useQuery({
+  const { data: submissions = [], isLoading: isSubmissionsLoading } = useQuery({
     queryKey: ["/api/my/courses", courseId, "problems", problemId, "submissions"],
     queryFn: () => fetchMySubmissions(courseId, problemId),
     enabled: !!courseId && !!problemId,
@@ -142,7 +143,15 @@ export default function LearnerProblemPage() {
             )}
             <div className="space-y-2">
               <Label>回答コード</Label>
-              <CodeSubmissionInput onCodeChange={setCode} initialCode={lastSubmittedCode} />
+              {/* Keyed by problemId (so navigating "次の問題へ" doesn't reuse the same
+                  instance and carry over its state) and by whether submissions have
+                  loaded yet (so it remounts once with the right initialCode instead of
+                  permanently seeding itself empty from before that fetch resolved). */}
+              <CodeSubmissionInput
+                key={`${problemId}-${isSubmissionsLoading ? "pending" : "ready"}`}
+                onCodeChange={setCode}
+                initialCode={lastSubmittedCode}
+              />
             </div>
             {gate && gate !== "submission" && (
               <p className="text-xs text-muted-foreground mt-2">
@@ -192,25 +201,29 @@ export default function LearnerProblemPage() {
                 <FeedbackSection title="良かった点" text={lastResult.aiGood} />
                 <FeedbackSection title="改善点" text={lastResult.aiImprove} />
                 <FeedbackSection title="修正が必要な点" text={lastResult.aiMustFix} />
-
-                {canAdvance &&
-                  (nextItem ? (
-                    <Link href={`/learn/courses/${courseId}/problems/${nextItem.problemId}`}>
-                      <Button className="mt-2 bg-gradient-to-r from-[#FF8C42] to-[#FFA566] text-white" data-testid="button-next-problem">
-                        次の問題へ →
-                      </Button>
-                    </Link>
-                  ) : (
-                    <Button
-                      className="mt-2 bg-gradient-to-r from-[#FF8C42] to-[#FFA566] text-white"
-                      onClick={() => navigate(`/learn/courses/${courseId}/certificate`)}
-                      data-testid="button-view-certificate-from-problem"
-                    >
-                      修了証を見る 🎓
-                    </Button>
-                  ))}
               </>
             )}
+
+            {/* Outside the lastResult branch on purpose: a video- or
+                self-review-gated problem can become "done" with no code
+                submission at all (submitting is optional practice there),
+                so this must not depend on lastResult being set. */}
+            {canAdvance &&
+              (nextItem ? (
+                <Link href={`/learn/courses/${courseId}/problems/${nextItem.problemId}`}>
+                  <Button className="mt-2 bg-gradient-to-r from-[#FF8C42] to-[#FFA566] text-white" data-testid="button-next-problem">
+                    次の問題へ →
+                  </Button>
+                </Link>
+              ) : (
+                <Button
+                  className="mt-2 bg-gradient-to-r from-[#FF8C42] to-[#FFA566] text-white"
+                  onClick={() => navigate(`/learn/courses/${courseId}/certificate`)}
+                  data-testid="button-view-certificate-from-problem"
+                >
+                  修了証を見る 🎓
+                </Button>
+              ))}
           </CardContent>
         </Card>
       </div>
@@ -237,6 +250,8 @@ export default function LearnerProblemPage() {
           </CardContent>
         </Card>
       )}
+
+      {problemId && <AiQuestionWidget problemId={problemId} />}
     </LearnerLayout>
   );
 }

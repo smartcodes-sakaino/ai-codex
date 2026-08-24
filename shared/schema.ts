@@ -162,6 +162,18 @@ export const selfReviewSubmissions = pgTable("self_review_submissions", {
   submittedAt: timestamp("submitted_at").defaultNow().notNull(),
 });
 
+// Questions asked to the AI question-corner widget on a problem page. Kept for
+// two reasons: an admin-only count per learner/problem (shown alongside
+// grading progress), and a record of what was actually asked/answered.
+export const aiQuestions = pgTable("ai_questions", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  problemId: text("problem_id").notNull().references(() => problems.id, { onDelete: "cascade" }),
+  question: text("question").notNull(),
+  answer: text("answer").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 // ============================================
 // Relations
 // ============================================
@@ -242,6 +254,11 @@ export const videoProgressRelations = relations(videoProgress, ({ one }) => ({
 export const selfReviewSubmissionsRelations = relations(selfReviewSubmissions, ({ one }) => ({
   user: one(users, { fields: [selfReviewSubmissions.userId], references: [users.id] }),
   problem: one(problems, { fields: [selfReviewSubmissions.problemId], references: [problems.id] }),
+}));
+
+export const aiQuestionsRelations = relations(aiQuestions, ({ one }) => ({
+  user: one(users, { fields: [aiQuestions.userId], references: [users.id] }),
+  problem: one(problems, { fields: [aiQuestions.problemId], references: [problems.id] }),
 }));
 
 // ============================================
@@ -334,6 +351,10 @@ export const submitSelfReviewSchema = z.object({
   reviewCode: z.string().min(1, "レビュー対象のコードが必要です").max(200000, "コードが長すぎます"),
 });
 
+export const askAiQuestionSchema = z.object({
+  question: z.string().min(1, "質問を入力してください").max(2000, "質問が長すぎます"),
+});
+
 // Block types
 export const blockTypeSchema = z.enum(["problem", "code", "text", "video", "lesson", "file"]);
 export type BlockType = z.infer<typeof blockTypeSchema>;
@@ -343,6 +364,10 @@ export const problemBlockContentSchema = z.object({
   text: z.string(),
   images: z.array(z.string()),
   videoUrl: z.string().optional(),
+  // When set, submissions are graded by exact match against this string
+  // instead of calling the AI — for lightweight "type this to confirm"
+  // problems (e.g. a lesson's acknowledgement step) that don't need grading.
+  expectedAnswer: z.string().optional(),
 });
 
 // Code block content
@@ -454,9 +479,11 @@ export type Certificate = typeof certificates.$inferSelect;
 export type Settings = typeof settings.$inferSelect;
 export type VideoProgress = typeof videoProgress.$inferSelect;
 export type SelfReviewSubmission = typeof selfReviewSubmissions.$inferSelect;
+export type AiQuestion = typeof aiQuestions.$inferSelect;
 
 export type LoginInput = z.infer<typeof loginSchema>;
 export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
+export type AskAiQuestionInput = z.infer<typeof askAiQuestionSchema>;
 export type SubmitAnswerInput = z.infer<typeof submitAnswerSchema>;
 export type UpdateVideoProgressInput = z.infer<typeof updateVideoProgressSchema>;
 export type SubmitSelfReviewInput = z.infer<typeof submitSelfReviewSchema>;
