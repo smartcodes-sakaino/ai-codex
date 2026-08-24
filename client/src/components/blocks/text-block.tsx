@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Trash2, Sparkles, Loader2, GripVertical } from "lucide-react";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import type { Block, TextBlockContent, ProblemBlockContent, CodeBlockContent } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -99,7 +100,7 @@ export function TextBlock({
         <CardContent>
           <div className="prose dark:prose-invert max-w-none prose-headings:text-[#4A90E2] dark:prose-headings:text-[#7CB9E8] prose-strong:text-[#4A90E2] dark:prose-strong:text-[#7CB9E8] prose-code:bg-[#4A90E2]/10 dark:prose-code:bg-[#7CB9E8]/20 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:text-[#4A90E2] dark:prose-code:text-[#7CB9E8] prose-pre:bg-[#1E1E1E] prose-pre:text-gray-100 prose-a:text-[#FF6B9D] dark:prose-a:text-[#FFB3C6] prose-li:marker:text-[#4A90E2]">
             {content.text ? (
-              <ReactMarkdown>{content.text}</ReactMarkdown>
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{content.text}</ReactMarkdown>
             ) : (
               <p className="text-muted-foreground">解説がありません</p>
             )}

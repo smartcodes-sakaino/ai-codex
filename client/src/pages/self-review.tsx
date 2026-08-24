@@ -9,6 +9,7 @@ import { queryClient } from "@/lib/queryClient";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { CodeSubmissionInput, type CodeSubmissionInputHandle } from "@/components/code-submission-input";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 export default function SelfReviewPage() {
   const { token } = useParams<{ token: string }>();
@@ -189,7 +190,7 @@ export default function SelfReviewPage() {
             )}
 
             <div className="prose prose-sm dark:prose-invert max-w-none p-4 bg-muted/50 rounded-md">
-              <ReactMarkdown>{review}</ReactMarkdown>
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{review}</ReactMarkdown>
             </div>
           </div>
         )}

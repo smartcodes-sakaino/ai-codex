@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import { Trash2, GripVertical, Image, Loader2 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import type { Block, LessonBlockContent } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -86,7 +87,7 @@ export function LessonBlock({
           {content.title && <h3 className="text-lg font-semibold mb-3">{content.title}</h3>}
           <div className="prose dark:prose-invert max-w-none prose-img:rounded-lg">
             {content.markdown ? (
-              <ReactMarkdown>{content.markdown}</ReactMarkdown>
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{content.markdown}</ReactMarkdown>
             ) : (
               <p className="text-muted-foreground">授業内容がありません</p>
             )}
@@ -187,7 +188,7 @@ export function LessonBlock({
           <div className="space-y-2">
             <Label className="text-muted-foreground">プレビュー</Label>
             <div className="prose dark:prose-invert max-w-none prose-img:rounded-lg border rounded-md p-4 bg-background/50">
-              <ReactMarkdown>{content.markdown}</ReactMarkdown>
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{content.markdown}</ReactMarkdown>
             </div>
           </div>
         )}

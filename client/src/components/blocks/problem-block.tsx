@@ -1,5 +1,7 @@
 import { useState, useRef } from "react";
-import { Trash2, Upload, X, Video, GripVertical, Link, FileVideo, Loader2 } from "lucide-react";
+import { Trash2, Upload, X, Video, GripVertical, Link, FileVideo, Loader2, Image } from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import type { Block, ProblemBlockContent } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -35,8 +37,12 @@ export function ProblemBlock({
   const [imageError, setImageError] = useState("");
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [isUploadingVideo, setIsUploadingVideo] = useState(false);
+  const [isUploadingInlineImage, setIsUploadingInlineImage] = useState(false);
+  const [inlineImageError, setInlineImageError] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const videoInputRef = useRef<HTMLInputElement>(null);
+  const inlineImageInputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const MAX_VIDEO_SIZE = 50 * 1024 * 1024; // 50MB
   const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10MB
@@ -45,6 +51,44 @@ export function ProblemBlock({
 
   const handleTextChange = (text: string) => {
     onUpdate({ ...content, text });
+  };
+
+  // Inserts Markdown image syntax at the cursor position (or at the end, if the
+  // textarea was never focused), separate from the "画像" gallery below — this
+  // embeds the image inline in the problem text itself, at a chosen spot.
+  const handleInlineImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setInlineImageError("");
+    setIsUploadingInlineImage(true);
+    try {
+      const url = await uploadFile(file, "images");
+      const textarea = textareaRef.current;
+      const text = content.text || "";
+      const insertion = `![${file.name}](${url})`;
+
+      if (textarea && document.activeElement === textarea) {
+        const start = textarea.selectionStart ?? text.length;
+        const end = textarea.selectionEnd ?? text.length;
+        const next = text.slice(0, start) + insertion + text.slice(end);
+        onUpdate({ ...content, text: next });
+        requestAnimationFrame(() => {
+          textarea.focus();
+          const caret = start + insertion.length;
+          textarea.setSelectionRange(caret, caret);
+        });
+      } else {
+        const next = text ? `${text}\n\n${insertion}\n` : `${insertion}\n`;
+        onUpdate({ ...content, text: next });
+      }
+    } catch (error) {
+      console.error("Inline image upload error:", error);
+      setInlineImageError("画像のアップロードに失敗しました。");
+    } finally {
+      setIsUploadingInlineImage(false);
+      if (inlineImageInputRef.current) inlineImageInputRef.current.value = "";
+    }
   };
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -144,8 +188,12 @@ export function ProblemBlock({
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="prose dark:prose-invert max-w-none whitespace-pre-wrap">
-            {content.text || "問題文がありません"}
+          <div className="prose dark:prose-invert max-w-none prose-img:rounded-lg">
+            {content.text ? (
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{content.text}</ReactMarkdown>
+            ) : (
+              <p className="text-muted-foreground">問題文がありません</p>
+            )}
           </div>
           {content.images && content.images.length > 0 && (
             <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
@@ -226,18 +274,51 @@ export function ProblemBlock({
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="space-y-2">
-          <Label>問題文</Label>
+          <div className="flex items-center justify-between">
+            <Label>問題文（Markdown）</Label>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => inlineImageInputRef.current?.click()}
+              disabled={isUploadingInlineImage}
+              className="gap-2"
+              data-testid={`button-insert-inline-image-${block.id}`}
+            >
+              {isUploadingInlineImage ? <Loader2 className="h-4 w-4 animate-spin" /> : <Image className="h-4 w-4" />}
+              画像を挿入
+            </Button>
+            <input
+              ref={inlineImageInputRef}
+              type="file"
+              accept="image/*"
+              onChange={handleInlineImageUpload}
+              className="hidden"
+              data-testid={`input-inline-image-upload-${block.id}`}
+            />
+          </div>
           <Textarea
+            ref={textareaRef}
             value={content.text || ""}
             onChange={(e) => handleTextChange(e.target.value)}
-            placeholder="問題文を入力してください..."
+            placeholder="問題文をMarkdown形式で入力してください...&#10;&#10;「画像を挿入」ボタンでカーソル位置に画像を差し込めます。"
             className="min-h-[120px] resize-y"
             data-testid={`textarea-problem-${block.id}`}
           />
+          {inlineImageError && <p className="text-sm text-destructive">{inlineImageError}</p>}
         </div>
 
+        {content.text && (
+          <div className="space-y-2">
+            <Label className="text-muted-foreground">プレビュー</Label>
+            <div className="prose dark:prose-invert max-w-none prose-img:rounded-lg border rounded-md p-4 bg-background/50">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{content.text}</ReactMarkdown>
+            </div>
+          </div>
+        )}
+
         <div className="space-y-2">
-          <Label>画像</Label>
+          <Label>画像ギャラリー（本文とは別に一覧表示されます）</Label>
           <div
             className={`border-2 border-dashed border-muted-foreground/25 rounded-lg p-4 text-center cursor-pointer hover:border-muted-foreground/50 transition-colors ${isUploadingImage ? 'opacity-50 pointer-events-none' : ''}`}
             onClick={() => fileInputRef.current?.click()}

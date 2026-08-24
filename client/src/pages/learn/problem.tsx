@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams, Link, useLocation } from "wouter";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { LearnerLayout } from "@/components/learner-layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -128,7 +129,9 @@ export default function LearnerProblemPage() {
           </CardHeader>
           <CardContent>
             {description && (
-              <p className="text-sm whitespace-pre-wrap leading-relaxed mb-4">{description}</p>
+              <div className="prose prose-sm dark:prose-invert max-w-none prose-img:rounded-lg mb-4">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>{description}</ReactMarkdown>
+              </div>
             )}
             {fileBlocks.length > 0 && (
               <div className="space-y-2 mb-4">
@@ -247,7 +250,7 @@ function LearnerLessonBlock({ block }: { block: Block }) {
       </CardHeader>
       <CardContent>
         <div className="prose prose-sm dark:prose-invert max-w-none prose-img:rounded-lg">
-          <ReactMarkdown>{content.markdown || ""}</ReactMarkdown>
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>{content.markdown || ""}</ReactMarkdown>
         </div>
       </CardContent>
     </Card>

@@ -17,6 +17,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { generateReview } from "@/lib/api";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 const LANGUAGES = [
   { value: "html", label: "HTML" },
@@ -455,7 +456,7 @@ export function AIReviewDialog({ problem, modelCode, explanation, disabled }: AI
             </div>
             
             <div className="prose prose-sm dark:prose-invert max-w-none p-4 bg-muted/50 rounded-lg">
-              <ReactMarkdown>{review}</ReactMarkdown>
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{review}</ReactMarkdown>
             </div>
 
             <div className="flex justify-end">
