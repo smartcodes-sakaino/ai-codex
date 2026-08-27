@@ -63,6 +63,7 @@ export const users = pgTable("users", {
   tempPassword: text("temp_password"),
   name: text("name").notNull(),
   role: text("role").notNull().default("learner"), // "admin" | "learner"
+  isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -293,6 +294,7 @@ export const insertUserSchema = createInsertSchema(users).omit({
   id: true,
   passwordHash: true,
   tempPassword: true,
+  isActive: true,
   createdAt: true,
 }).extend({
   name: z.string().min(1, "氏名が必要です").max(200),
@@ -304,6 +306,8 @@ export const updateUserSchema = z.object({
   name: z.string().min(1, "氏名が必要です").max(200).optional(),
   email: z.string().email("有効なメールアドレスを入力してください").optional(),
   groupIds: z.array(z.string()).optional(),
+  isActive: z.boolean().optional(),
+  role: z.enum(["admin", "learner"]).optional(),
 });
 
 export const insertGroupSchema = createInsertSchema(groups).omit({

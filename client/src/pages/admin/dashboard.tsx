@@ -39,7 +39,7 @@ export default function AdminDashboardPage() {
               {courses.map((c) => (
                 <Link
                   key={c.id}
-                  href="/admin/progress"
+                  href={`/admin/progress?course=${c.id}`}
                   className="flex items-center justify-between py-3 text-sm hover:text-[#C85A1B] transition-colors"
                   data-testid={`link-dashboard-course-${c.id}`}
                 >

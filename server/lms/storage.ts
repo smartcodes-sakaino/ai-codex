@@ -88,11 +88,13 @@ export const lmsStorage = {
 
   async updateUser(
     userId: string,
-    data: { name?: string; email?: string; groupIds?: string[] }
+    data: { name?: string; email?: string; groupIds?: string[]; isActive?: boolean; role?: "admin" | "learner" }
   ): Promise<User | undefined> {
-    const fields: Partial<Pick<User, "name" | "email">> = {};
+    const fields: Partial<Pick<User, "name" | "email" | "isActive" | "role">> = {};
     if (data.name !== undefined) fields.name = data.name;
     if (data.email !== undefined) fields.email = data.email;
+    if (data.isActive !== undefined) fields.isActive = data.isActive;
+    if (data.role !== undefined) fields.role = data.role;
 
     let updated: User | undefined;
     if (Object.keys(fields).length > 0) {
@@ -107,6 +109,17 @@ export const lmsStorage = {
     }
 
     return updated;
+  },
+
+  // Used to guard against a role/isActive change leaving the org with no one
+  // who can reach the admin panel. Excludes excludeUserId so the caller can
+  // check "how many active admins besides the one being changed."
+  async countActiveAdmins(excludeUserId?: string): Promise<number> {
+    const admins = await db
+      .select()
+      .from(users)
+      .where(and(eq(users.role, "admin"), eq(users.isActive, true)));
+    return admins.filter((a) => a.id !== excludeUserId).length;
   },
 
   async regeneratePassword(userId: string, passwordHash: string, tempPassword: string): Promise<User | undefined> {

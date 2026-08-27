@@ -44,7 +44,13 @@ export async function requireAuth(req: AuthedRequest, res: Response, next: NextF
     return res.status(401).json({ error: "ログインが必要です" });
   }
   const user = await lmsStorage.getUserById(userId);
-  if (!user) {
+  // Re-checked on every request (not just at login) so disabling a user takes
+  // effect immediately, even mid-session. Treated the same as "not logged in"
+  // (401, session destroyed) rather than a distinct error, so the existing
+  // fetchMe()->null->redirect-to-login handling covers it with no extra
+  // frontend branching.
+  if (!user || !user.isActive) {
+    req.session.destroy(() => {});
     return res.status(401).json({ error: "ログインが必要です" });
   }
   req.user = user;

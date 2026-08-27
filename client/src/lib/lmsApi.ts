@@ -18,6 +18,7 @@ export interface LmsUser {
   email: string;
   role: "admin" | "learner";
   tempPassword: string | null;
+  isActive: boolean;
   groupIds: string[];
   createdAt: string;
 }
@@ -141,9 +142,14 @@ export async function regenerateUserPassword(id: string): Promise<LmsUser> {
 
 export async function updateUser(
   id: string,
-  data: { name?: string; email?: string; groupIds?: string[] }
+  data: { name?: string; email?: string; groupIds?: string[]; isActive?: boolean; role?: "admin" | "learner" }
 ): Promise<LmsUser> {
   const res = await apiRequest("PATCH", `/api/admin/users/${id}`, data);
+  return res.json();
+}
+
+export async function setUserActive(id: string, isActive: boolean): Promise<LmsUser> {
+  const res = await apiRequest("PATCH", `/api/admin/users/${id}`, { isActive });
   return res.json();
 }
 

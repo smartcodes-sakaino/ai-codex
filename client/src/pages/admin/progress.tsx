@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useSearch } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { AdminLayout } from "@/components/admin-layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -60,10 +61,13 @@ function renderProgressStatus(item: ProgressDetailItem) {
 export default function AdminProgressPage() {
   const { toast } = useToast();
   const { data: courses = [] } = useQuery({ queryKey: ["/api/admin/courses"], queryFn: fetchAdminCourses });
+  // A dashboard course row links here with ?course=<id> so it opens straight
+  // to that course's progress rather than always landing on courses[0].
+  const courseIdFromUrl = new URLSearchParams(useSearch()).get("course") || "";
   const [courseId, setCourseId] = useState<string>("");
   const [expandedUserId, setExpandedUserId] = useState<string | null>(null);
 
-  const activeCourseId = courseId || courses[0]?.id || "";
+  const activeCourseId = courseId || courseIdFromUrl || courses[0]?.id || "";
 
   const { data: progress = [] } = useQuery({
     queryKey: ["/api/admin/courses", activeCourseId, "progress"],

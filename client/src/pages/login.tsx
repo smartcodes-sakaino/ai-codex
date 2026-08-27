@@ -30,7 +30,19 @@ export default function LoginPage() {
       const loggedInUser = await login(email, password);
       navigate(loggedInUser.mustChangePassword ? "/change-password" : loggedInUser.role === "admin" ? "/admin" : "/learn");
     } catch (err) {
-      setError("メールアドレスまたはパスワードが正しくありません");
+      // apiRequest throws `${status}: ${bodyText}` — only the disabled-account
+      // case (403) needs its own message; everything else stays generic so
+      // failed logins don't leak whether an account exists.
+      if (err instanceof Error && err.message.startsWith("403:")) {
+        try {
+          const body = JSON.parse(err.message.slice(4));
+          setError(body.error || "このアカウントは無効化されています。管理者にお問い合わせください");
+        } catch {
+          setError("このアカウントは無効化されています。管理者にお問い合わせください");
+        }
+      } else {
+        setError("メールアドレスまたはパスワードが正しくありません");
+      }
     } finally {
       setIsSubmitting(false);
     }

@@ -43,6 +43,9 @@ export function registerLmsRoutes(app: Express): void {
     if (!valid) {
       return res.status(401).json(genericError);
     }
+    if (!user.isActive) {
+      return res.status(403).json({ error: "このアカウントは無効化されています。管理者にお問い合わせください" });
+    }
     req.session.userId = user.id;
     // Saved explicitly (rather than relying on the implicit save-on-response-end)
     // so that a session store failure surfaces as an error instead of silently
@@ -128,7 +131,7 @@ export function registerLmsRoutes(app: Express): void {
     res.json(updated);
   });
 
-  app.patch<{ id: string }>("/api/admin/users/:id", ...requireAdmin, async (req: Request, res: Response) => {
+  app.patch<{ id: string }>("/api/admin/users/:id", ...requireAdmin, async (req: AuthedRequest, res: Response) => {
     const parsed = updateUserSchema.safeParse(req.body);
     if (!parsed.success) {
       return res.status(400).json({ error: parsed.error.errors[0]?.message || "入力が無効です" });
@@ -139,6 +142,31 @@ export function registerLmsRoutes(app: Express): void {
       const existing = await lmsStorage.getUserByEmail(parsed.data.email);
       if (existing && existing.id !== userId) {
         return res.status(400).json({ error: "このメールアドレスは既に登録されています" });
+      }
+    }
+
+    if (parsed.data.isActive === false && userId === req.user!.id) {
+      return res.status(400).json({ error: "自分自身を無効化することはできません" });
+    }
+    if (parsed.data.role === "learner" && userId === req.user!.id) {
+      return res.status(400).json({ error: "自分自身の権限を変更することはできません" });
+    }
+
+    // Guard against a role or isActive change leaving zero admins able to
+    // reach this very panel — checked as one combined "will this user still
+    // count as an active admin afterward?" rather than field-by-field, since
+    // a single request can carry both at once.
+    const target = await lmsStorage.getUserById(userId);
+    if (!target) {
+      return res.status(404).json({ error: "ユーザーが見つかりません" });
+    }
+    const wasActiveAdmin = target.role === "admin" && target.isActive;
+    const staysAdmin = parsed.data.role === undefined ? target.role === "admin" : parsed.data.role === "admin";
+    const staysActive = parsed.data.isActive === undefined ? target.isActive : parsed.data.isActive;
+    if (wasActiveAdmin && !(staysAdmin && staysActive)) {
+      const otherActiveAdmins = await lmsStorage.countActiveAdmins(userId);
+      if (otherActiveAdmins === 0) {
+        return res.status(400).json({ error: "管理者が0人になるため、この操作はできません" });
       }
     }
 

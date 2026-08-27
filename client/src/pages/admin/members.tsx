@@ -23,12 +23,21 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
 import { queryClient } from "@/lib/queryClient";
 import {
   fetchUsers,
   createUser,
   updateUser,
+  setUserActive,
   regenerateUserPassword,
   fetchGroupsLms,
   createGroupLms,
@@ -36,10 +45,19 @@ import {
   type LmsUser,
 } from "@/lib/lmsApi";
 
+type StatusFilter = "all" | "active" | "disabled";
+
 export default function AdminMembersPage() {
   const { toast } = useToast();
+  const { user: currentUser } = useAuth();
   const { data: users = [] } = useQuery({ queryKey: ["/api/admin/users"], queryFn: fetchUsers });
   const { data: groups = [] } = useQuery({ queryKey: ["/api/admin/groups"], queryFn: fetchGroupsLms });
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const visibleUsers = users.filter((u) => {
+    if (statusFilter === "active") return u.isActive;
+    if (statusFilter === "disabled") return !u.isActive;
+    return true;
+  });
 
   const [showAddUser, setShowAddUser] = useState(false);
   const [showAddGroup, setShowAddGroup] = useState(false);
@@ -52,12 +70,14 @@ export default function AdminMembersPage() {
   const [editName, setEditName] = useState("");
   const [editEmail, setEditEmail] = useState("");
   const [editGroupIds, setEditGroupIds] = useState<string[]>([]);
+  const [editRole, setEditRole] = useState<"admin" | "learner">("learner");
 
   const openEditUser = (u: LmsUser) => {
     setEditingUser(u);
     setEditName(u.name);
     setEditEmail(u.email);
     setEditGroupIds(u.groupIds);
+    setEditRole(u.role);
   };
 
   const createUserMutation = useMutation({
@@ -81,8 +101,17 @@ export default function AdminMembersPage() {
     },
   });
 
+  const toggleActiveMutation = useMutation({
+    mutationFn: ({ id, isActive }: { id: string; isActive: boolean }) => setUserActive(id, isActive),
+    onSuccess: (_result, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
+      toast({ title: variables.isActive ? "ユーザーを有効化しました" : "ユーザーを無効化しました" });
+    },
+    onError: (err: Error) => toast({ title: err.message, variant: "destructive" }),
+  });
+
   const updateUserMutation = useMutation({
-    mutationFn: (data: { name: string; email: string; groupIds: string[] }) =>
+    mutationFn: (data: { name: string; email: string; groupIds: string[]; role: "admin" | "learner" }) =>
       updateUser(editingUser!.id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
@@ -127,9 +156,21 @@ export default function AdminMembersPage() {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle className="text-base">学習者一覧</CardTitle>
-              <Button size="sm" onClick={() => setShowAddUser(true)} data-testid="button-add-user">
-                ＋ ユーザーを追加
-              </Button>
+              <div className="flex items-center gap-2">
+                <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as StatusFilter)}>
+                  <SelectTrigger className="w-32" data-testid="select-user-status-filter">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">すべて</SelectItem>
+                    <SelectItem value="active">有効のみ</SelectItem>
+                    <SelectItem value="disabled">無効のみ</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button size="sm" onClick={() => setShowAddUser(true)} data-testid="button-add-user">
+                  ＋ ユーザーを追加
+                </Button>
+              </div>
             </CardHeader>
             <CardContent>
               <Table>
@@ -137,22 +178,34 @@ export default function AdminMembersPage() {
                   <TableRow>
                     <TableHead>名前</TableHead>
                     <TableHead>メールアドレス</TableHead>
+                    <TableHead>権限</TableHead>
                     <TableHead>所属グループ</TableHead>
+                    <TableHead>状態</TableHead>
                     <TableHead>初回パスワード</TableHead>
                     <TableHead />
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {users.map((u) => (
-                    <TableRow key={u.id} data-testid={`row-user-${u.id}`}>
+                  {visibleUsers.map((u) => (
+                    <TableRow key={u.id} data-testid={`row-user-${u.id}`} className={!u.isActive ? "opacity-60" : undefined}>
                       <TableCell className="font-medium">{u.name}</TableCell>
                       <TableCell>{u.email}</TableCell>
+                      <TableCell>
+                        <Badge variant={u.role === "admin" ? "default" : "outline"} data-testid={`badge-role-${u.id}`}>
+                          {u.role === "admin" ? "管理者" : "学習者"}
+                        </Badge>
+                      </TableCell>
                       <TableCell className="space-x-1">
                         {u.groupIds.map((gid) => (
                           <Badge key={gid} variant="secondary">
                             {groupName(gid)}
                           </Badge>
                         ))}
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={u.isActive ? "secondary" : "destructive"} data-testid={`badge-status-${u.id}`}>
+                          {u.isActive ? "有効" : "無効"}
+                        </Badge>
                       </TableCell>
                       <TableCell>
                         {u.tempPassword ? (
@@ -178,6 +231,16 @@ export default function AdminMembersPage() {
                         >
                           再発行
                         </Button>
+                        {u.id !== currentUser?.id && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => toggleActiveMutation.mutate({ id: u.id, isActive: !u.isActive })}
+                            data-testid={`button-toggle-active-${u.id}`}
+                          >
+                            {u.isActive ? "無効化" : "有効化"}
+                          </Button>
+                        )}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -294,6 +357,25 @@ export default function AdminMembersPage() {
               />
             </div>
             <div className="space-y-2">
+              <Label>権限</Label>
+              <Select
+                value={editRole}
+                onValueChange={(v) => setEditRole(v as "admin" | "learner")}
+                disabled={editingUser?.id === currentUser?.id}
+              >
+                <SelectTrigger data-testid="select-edit-user-role">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="admin">管理者</SelectItem>
+                  <SelectItem value="learner">学習者</SelectItem>
+                </SelectContent>
+              </Select>
+              {editingUser?.id === currentUser?.id && (
+                <p className="text-xs text-muted-foreground">自分自身の権限は変更できません</p>
+              )}
+            </div>
+            <div className="space-y-2">
               <Label>所属グループ</Label>
               {groups.map((g) => (
                 <div key={g.id} className="flex items-center gap-2">
@@ -313,7 +395,9 @@ export default function AdminMembersPage() {
               キャンセル
             </Button>
             <Button
-              onClick={() => updateUserMutation.mutate({ name: editName, email: editEmail, groupIds: editGroupIds })}
+              onClick={() =>
+                updateUserMutation.mutate({ name: editName, email: editEmail, groupIds: editGroupIds, role: editRole })
+              }
               disabled={updateUserMutation.isPending}
               data-testid="button-confirm-edit-user"
             >

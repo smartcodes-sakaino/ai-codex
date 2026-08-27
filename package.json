@@ -11,7 +11,8 @@
     "db:push": "drizzle-kit push",
     "db:setup-session": "tsx script/setup-session-table.ts",
     "db:push-curriculum": "tsx script/push-curriculum-schema.ts",
-    "db:push-ai-questions": "tsx script/push-ai-questions-schema.ts"
+    "db:push-ai-questions": "tsx script/push-ai-questions-schema.ts",
+    "db:push-user-active": "tsx script/push-user-active-schema.ts"
   },
   "dependencies": {
     "@google/genai": "^1.37.0",
