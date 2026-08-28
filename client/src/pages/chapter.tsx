@@ -196,15 +196,41 @@ export default function ChapterPage() {
   const handleMoveProblem = (problemId: string, direction: "up" | "down") => {
     const index = problems.findIndex((p) => p.id === problemId);
     if (index === -1) return;
-    
+
     const newIndex = direction === "up" ? index - 1 : index + 1;
     if (newIndex < 0 || newIndex >= problems.length) return;
 
     const newProblems = [...problems];
     [newProblems[index], newProblems[newIndex]] = [newProblems[newIndex], newProblems[index]];
-    
+
     const orderedIds = newProblems.map((p) => p.id);
     reorderProblemsMutation.mutate(orderedIds);
+  };
+
+  const [draggedProblemId, setDraggedProblemId] = useState<string | null>(null);
+  const [dragOverProblemId, setDragOverProblemId] = useState<string | null>(null);
+
+  const handleProblemDrop = (targetId: string) => {
+    if (!draggedProblemId || draggedProblemId === targetId) {
+      setDraggedProblemId(null);
+      setDragOverProblemId(null);
+      return;
+    }
+    const fromIndex = problems.findIndex((p) => p.id === draggedProblemId);
+    const toIndex = problems.findIndex((p) => p.id === targetId);
+    if (fromIndex === -1 || toIndex === -1) {
+      setDraggedProblemId(null);
+      setDragOverProblemId(null);
+      return;
+    }
+
+    const reordered = [...problems];
+    const [moved] = reordered.splice(fromIndex, 1);
+    reordered.splice(toIndex, 0, moved);
+    reorderProblemsMutation.mutate(reordered.map((p) => p.id));
+
+    setDraggedProblemId(null);
+    setDragOverProblemId(null);
   };
 
   
@@ -318,6 +344,24 @@ export default function ChapterPage() {
                 isFirst={index === 0}
                 isLast={index === problems.length - 1}
                 colorIndex={index}
+                onDragStart={() => setDraggedProblemId(problem.id)}
+                onDragEnter={(e) => {
+                  e.preventDefault();
+                  if (draggedProblemId && draggedProblemId !== problem.id) {
+                    setDragOverProblemId(problem.id);
+                  }
+                }}
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  handleProblemDrop(problem.id);
+                }}
+                onDragEnd={() => {
+                  setDraggedProblemId(null);
+                  setDragOverProblemId(null);
+                }}
+                isDragging={draggedProblemId === problem.id}
+                isDragOver={dragOverProblemId === problem.id}
               />
             ))}
           </div>

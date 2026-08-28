@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Trash2, Edit2, ChevronUp, ChevronDown, CheckCircle, Circle, AlertTriangle, GripVertical } from "lucide-react";
 import { Link } from "wouter";
 import type { Problem } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
 
 interface ProblemCardProps {
   problem: Problem;
@@ -18,6 +19,13 @@ interface ProblemCardProps {
   isFirst: boolean;
   isLast: boolean;
   colorIndex: number;
+  onDragStart?: (e: React.DragEvent) => void;
+  onDragEnter?: (e: React.DragEvent) => void;
+  onDragOver?: (e: React.DragEvent) => void;
+  onDrop?: (e: React.DragEvent) => void;
+  onDragEnd?: (e: React.DragEvent) => void;
+  isDragging?: boolean;
+  isDragOver?: boolean;
 }
 
 const borderColors = [
@@ -40,9 +48,21 @@ export function ProblemCard({
   isFirst,
   isLast,
   colorIndex,
+  onDragStart,
+  onDragEnter,
+  onDragOver,
+  onDrop,
+  onDragEnd,
+  isDragging,
+  isDragOver,
 }: ProblemCardProps) {
   const [isRenaming, setIsRenaming] = useState(false);
   const [newTitle, setNewTitle] = useState(problem.title);
+  // Native HTML5 drag-and-drop has no "drag by this handle only" primitive —
+  // draggable has to live on the whole card, so this ref tracks whether the
+  // mousedown that preceded dragstart actually landed on the grip icon, and
+  // dragstart is cancelled otherwise (e.g. a normal click on the title link).
+  const dragArmedRef = useRef(false);
 
   const borderColor = borderColors[colorIndex % borderColors.length];
   const formattedDate = new Date(problem.createdAt).toLocaleDateString("ja-JP", {
@@ -60,14 +80,40 @@ export function ProblemCard({
 
   return (
     <Card
-      className={`border-l-4 ${borderColor} overflow-visible hover-elevate`}
+      draggable={editMode}
+      onDragStart={(e) => {
+        if (!dragArmedRef.current) {
+          e.preventDefault();
+          return;
+        }
+        e.dataTransfer.effectAllowed = "move";
+        onDragStart?.(e);
+      }}
+      onDragEnter={onDragEnter}
+      onDragOver={onDragOver}
+      onDrop={onDrop}
+      onDragEnd={(e) => {
+        dragArmedRef.current = false;
+        onDragEnd?.(e);
+      }}
+      className={cn(
+        `border-l-4 ${borderColor} overflow-visible hover-elevate`,
+        isDragging && "opacity-40",
+        isDragOver && "border-t-4 border-t-primary"
+      )}
       data-testid={`card-problem-${problem.id}`}
     >
       <CardContent className="p-4">
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <div className="flex items-center gap-3 flex-1 min-w-0">
             {editMode && (
-              <GripVertical className="h-5 w-5 text-muted-foreground flex-shrink-0 cursor-grab" />
+              <GripVertical
+                className="h-5 w-5 text-muted-foreground flex-shrink-0 cursor-grab active:cursor-grabbing"
+                onMouseDown={() => {
+                  dragArmedRef.current = true;
+                }}
+                data-testid={`handle-drag-problem-${problem.id}`}
+              />
             )}
             {isRenaming ? (
               <Input

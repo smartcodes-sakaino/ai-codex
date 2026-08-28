@@ -299,7 +299,7 @@ export default function ProblemPage() {
         </div>
       </header>
 
-      <main className="container mx-auto px-4 py-8 max-w-4xl">
+      <main className="container mx-auto px-4 py-8">
         <div className="flex items-center justify-between mb-6 gap-4 flex-wrap">
           <div className="flex items-center gap-3 flex-wrap">
             <h1 className="text-2xl font-bold">{problemData.title}</h1>
@@ -525,7 +525,7 @@ export default function ProblemPage() {
 
       {editMode && (
         <div className="fixed bottom-0 left-0 right-0 bg-background/95 backdrop-blur border-t p-4 z-50">
-          <div className="container mx-auto max-w-4xl flex justify-end gap-2">
+          <div className="container mx-auto px-4 flex justify-end gap-2">
             <Button variant="outline" onClick={handleCancel} data-testid="button-cancel-edit">
               <X className="h-4 w-4 mr-2" />
               キャンセル
