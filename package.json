@@ -9,6 +9,8 @@
     "start": "cross-env NODE_ENV=production node dist/index.cjs",
     "check": "tsc",
     "db:push": "drizzle-kit push",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "tsx script/migrate.ts",
     "db:setup-session": "tsx script/setup-session-table.ts",
     "db:push-curriculum": "tsx script/push-curriculum-schema.ts",
     "db:push-ai-questions": "tsx script/push-ai-questions-schema.ts",
