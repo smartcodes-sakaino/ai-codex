@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
-import { Menu, LayoutDashboard, BookOpen, GraduationCap, Users, BarChart3, Sparkles, Award, LogOut, PlayCircle, KeyRound } from "lucide-react";
+import { Menu, LayoutDashboard, BookOpen, GraduationCap, Users, BarChart3, Sparkles, Award, LogOut, PlayCircle, Eye, KeyRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { useAuth } from "@/hooks/use-auth";
@@ -15,6 +15,7 @@ const NAV_ITEMS = [
   { href: "/admin/progress", label: "進捗確認", icon: BarChart3 },
   { href: "/settings", label: "AIプロンプト設定", icon: Sparkles },
   { href: "/admin/settings", label: "修了証設定", icon: Award },
+  { href: "/admin/view", label: "管理者ビュー(講師目線)", icon: Eye },
   { href: "/learn", label: "受講者ビューを見る", icon: PlayCircle },
 ];
 

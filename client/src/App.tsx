@@ -22,6 +22,9 @@ import LearnerMyCoursesPage from "@/pages/learn/my-courses";
 import LearnerRoadmapPage from "@/pages/learn/roadmap";
 import LearnerProblemPage from "@/pages/learn/problem";
 import LearnerCertificatePage from "@/pages/learn/certificate";
+import AdminViewCoursesPage from "@/pages/admin/view/courses";
+import AdminViewRoadmapPage from "@/pages/admin/view/roadmap";
+import AdminViewProblemPage from "@/pages/admin/view/problem";
 
 function Router() {
   return (
@@ -40,6 +43,13 @@ function Router() {
       <Route path="/admin/members" component={() => <RequireRole role="admin"><AdminMembersPage /></RequireRole>} />
       <Route path="/admin/progress" component={() => <RequireRole role="admin"><AdminProgressPage /></RequireRole>} />
       <Route path="/admin/settings" component={() => <RequireRole role="admin"><AdminLmsSettingsPage /></RequireRole>} />
+
+      <Route path="/admin/view" component={() => <RequireRole role="admin"><AdminViewCoursesPage /></RequireRole>} />
+      <Route path="/admin/view/courses/:id" component={() => <RequireRole role="admin"><AdminViewRoadmapPage /></RequireRole>} />
+      <Route
+        path="/admin/view/courses/:id/problems/:problemId"
+        component={() => <RequireRole role="admin"><AdminViewProblemPage /></RequireRole>}
+      />
 
       <Route path="/learn" component={() => <RequireRole role={["learner", "admin"]}><LearnerMyCoursesPage /></RequireRole>} />
       <Route path="/learn/courses/:id" component={() => <RequireRole role={["learner", "admin"]}><LearnerRoadmapPage /></RequireRole>} />

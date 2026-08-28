@@ -56,6 +56,15 @@ export interface RoadmapItem {
   videoStarted: boolean;
 }
 
+export interface AdminViewRoadmapItem {
+  chapterId: string;
+  chapterTitle: string;
+  problemId: string;
+  problemTitle: string;
+  gate: RoadmapGate;
+  hasLecture: boolean;
+}
+
 export interface SubmissionResult {
   verdict: "pass" | "fail";
   summary: string;
@@ -265,6 +274,12 @@ export async function fetchMyCourses(): Promise<LmsCourseWithProgress[]> {
 
 export async function fetchMyRoadmap(courseId: string): Promise<RoadmapItem[]> {
   const res = await fetch(`/api/my/courses/${courseId}/roadmap`, { credentials: "include" });
+  if (!res.ok) throw new Error("Failed to fetch roadmap");
+  return res.json();
+}
+
+export async function fetchAdminViewRoadmap(courseId: string): Promise<AdminViewRoadmapItem[]> {
+  const res = await fetch(`/api/admin/view/courses/${courseId}/roadmap`, { credentials: "include" });
   if (!res.ok) throw new Error("Failed to fetch roadmap");
   return res.json();
 }

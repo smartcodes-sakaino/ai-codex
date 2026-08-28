@@ -13,7 +13,7 @@ import {
 } from "@shared/schema";
 import { lmsStorage } from "./storage";
 import { hashPassword, verifyPassword, generateTempPassword, requireAuth, requireRole, type AuthedRequest } from "./auth";
-import { getRoadmap, getCourseProgress, assertProblemIsCurrent, checkAndIssueCertificatesForProblem } from "./roadmap";
+import { getRoadmap, getAdminViewRoadmap, getCourseProgress, assertProblemIsCurrent, checkAndIssueCertificatesForProblem } from "./roadmap";
 import { runLmsCheck, runAiQuestion, AiUnavailableError, type LmsCheckResult } from "./aiCheck";
 import { objectStorageService } from "./certificate";
 import { exportCourseProgress } from "./export";
@@ -204,6 +204,14 @@ export function registerLmsRoutes(app: Express): void {
 
   app.get("/api/admin/courses", ...requireAdmin, async (_req, res) => {
     res.json(await lmsStorage.getCourses());
+  });
+
+  // "Admin view" — an instructor-facing read of a course's full content
+  // (every problem, unassigned or not, always unlocked) for teaching prep,
+  // as opposed to /api/my/courses which is a specific learner's assigned,
+  // gated progress.
+  app.get<{ id: string }>("/api/admin/view/courses/:id/roadmap", ...requireAdmin, async (req: Request, res: Response) => {
+    res.json(await getAdminViewRoadmap(req.params.id as string));
   });
 
   app.post("/api/admin/courses", ...requireAdmin, async (req: Request, res: Response) => {

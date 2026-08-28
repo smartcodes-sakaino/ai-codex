@@ -55,6 +55,29 @@ async function isVideoStarted(userId: string, meta: ProblemMeta): Promise<boolea
   return false;
 }
 
+// The instructor-facing "admin view" shows every problem in a course
+// unlocked and ungated — there's no per-user pass state to compute, just the
+// same gate/hasLecture metadata the real roadmap uses to explain what a
+// learner would need to do.
+export interface AdminViewRoadmapItem {
+  chapterId: string;
+  chapterTitle: string;
+  problemId: string;
+  problemTitle: string;
+  gate: Gate;
+  hasLecture: boolean;
+}
+
+export async function getAdminViewRoadmap(courseId: string): Promise<AdminViewRoadmapItem[]> {
+  const flat = await lmsStorage.flattenCourse(courseId);
+  const metas = await Promise.all(flat.map((item) => resolveProblemMeta(item.problemId)));
+  return flat.map((item, i) => ({
+    ...item,
+    gate: metas[i].gate,
+    hasLecture: metas[i].hasLecture,
+  }));
+}
+
 export async function getRoadmap(userId: string, courseId: string): Promise<RoadmapItem[]> {
   const flat = await lmsStorage.flattenCourse(courseId);
 
