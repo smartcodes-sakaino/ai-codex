@@ -22,6 +22,7 @@ import {
 import { VideoPlayer } from "@/components/video-player";
 import { CodeSubmissionInput } from "@/components/code-submission-input";
 import { AiQuestionWidget } from "@/components/ai-question-widget";
+import { markdownVideoComponents } from "@/components/markdown-video";
 import type { Block, ProblemBlockContent, VideoBlockContent, LessonBlockContent, FileBlockContent } from "@shared/schema";
 
 export default function LearnerProblemPage() {
@@ -300,7 +301,9 @@ function LearnerLessonBlock({ block }: { block: Block }) {
       </CardHeader>
       <CardContent>
         <div className="prose prose-sm dark:prose-invert max-w-none prose-img:rounded-lg">
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{content.markdown || ""}</ReactMarkdown>
+          <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownVideoComponents}>
+            {content.markdown || ""}
+          </ReactMarkdown>
         </div>
       </CardContent>
     </Card>

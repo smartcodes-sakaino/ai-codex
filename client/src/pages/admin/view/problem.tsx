@@ -9,6 +9,7 @@ import { fetchProblemWithBlocks } from "@/lib/api";
 import { fetchAdminViewRoadmap } from "@/lib/lmsApi";
 import { CodeBlock } from "@/components/blocks/code-block";
 import { TextBlock } from "@/components/blocks/text-block";
+import { markdownVideoComponents } from "@/components/markdown-video";
 import type { Block, ProblemBlockContent, VideoBlockContent, LessonBlockContent, FileBlockContent } from "@shared/schema";
 
 const GATE_LABEL: Record<string, string> = {
@@ -153,7 +154,9 @@ function AdminViewLessonBlock({ block }: { block: Block }) {
       </CardHeader>
       <CardContent>
         <div className="prose prose-sm dark:prose-invert max-w-none prose-img:rounded-lg">
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{content.markdown || ""}</ReactMarkdown>
+          <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownVideoComponents}>
+            {content.markdown || ""}
+          </ReactMarkdown>
         </div>
       </CardContent>
     </Card>
