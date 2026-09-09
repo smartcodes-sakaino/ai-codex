@@ -59,6 +59,14 @@ export default function AdminViewProblemPage() {
       backHref={`/admin/view/courses/${courseId}`}
       backLabel="ロードマップへ"
     >
+      {fileBlocks.length > 0 && (
+        <div className="space-y-2 mb-5">
+          {fileBlocks.map((b) => (
+            <AdminViewFileBlock key={b.id} block={b} />
+          ))}
+        </div>
+      )}
+
       {lessonBlocks.length > 0 && (
         <div className="space-y-4 mb-5">
           {lessonBlocks.map((b) => (
@@ -83,13 +91,6 @@ export default function AdminViewProblemPage() {
           {description && (
             <div className="prose prose-sm dark:prose-invert max-w-none prose-img:rounded-lg mb-4">
               <ReactMarkdown remarkPlugins={[remarkGfm]}>{description}</ReactMarkdown>
-            </div>
-          )}
-          {fileBlocks.length > 0 && (
-            <div className="space-y-2">
-              {fileBlocks.map((b) => (
-                <AdminViewFileBlock key={b.id} block={b} />
-              ))}
             </div>
           )}
           {gate && (

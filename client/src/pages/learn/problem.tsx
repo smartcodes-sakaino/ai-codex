@@ -136,6 +136,14 @@ export default function LearnerProblemPage() {
 
   return (
     <LearnerLayout title={problem?.title || "問題"} backHref={`/learn/courses/${courseId}`} backLabel="ロードマップへ">
+      {fileBlocks.length > 0 && (
+        <div className="space-y-2 mb-5">
+          {fileBlocks.map((b) => (
+            <LearnerFileBlock key={b.id} block={b} />
+          ))}
+        </div>
+      )}
+
       {lessonBlocks.length > 0 && (
         <div className="space-y-4 mb-5">
           {lessonBlocks.map((b) => (
@@ -161,13 +169,6 @@ export default function LearnerProblemPage() {
             {description && (
               <div className="prose prose-sm dark:prose-invert max-w-none prose-img:rounded-lg mb-4">
                 <ReactMarkdown remarkPlugins={[remarkGfm]}>{description}</ReactMarkdown>
-              </div>
-            )}
-            {fileBlocks.length > 0 && (
-              <div className="space-y-2 mb-4">
-                {fileBlocks.map((b) => (
-                  <LearnerFileBlock key={b.id} block={b} />
-                ))}
               </div>
             )}
             <div className="space-y-2">
