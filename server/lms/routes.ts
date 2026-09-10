@@ -177,6 +177,32 @@ export function registerLmsRoutes(app: Express): void {
     res.json(updated);
   });
 
+  // Permanent deletion — distinct from PATCH isActive:false, which is
+  // reversible. Same self/zero-admin guards as the PATCH route above, since
+  // deleting an active admin is just as capable of locking everyone out.
+  app.delete<{ id: string }>("/api/admin/users/:id", ...requireAdmin, async (req: AuthedRequest, res: Response) => {
+    const userId = req.params.id as string;
+
+    if (userId === req.user!.id) {
+      return res.status(400).json({ error: "自分自身を削除することはできません" });
+    }
+
+    const target = await lmsStorage.getUserById(userId);
+    if (!target) {
+      return res.status(404).json({ error: "ユーザーが見つかりません" });
+    }
+
+    if (target.role === "admin" && target.isActive) {
+      const otherActiveAdmins = await lmsStorage.countActiveAdmins(userId);
+      if (otherActiveAdmins === 0) {
+        return res.status(400).json({ error: "管理者が0人になるため、この操作はできません" });
+      }
+    }
+
+    await lmsStorage.deleteUser(userId);
+    res.status(204).send();
+  });
+
   // ============================================
   // Admin: Groups
   // ============================================

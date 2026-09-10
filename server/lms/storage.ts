@@ -122,6 +122,20 @@ export const lmsStorage = {
     return admins.filter((a) => a.id !== excludeUserId).length;
   },
 
+  // Permanent, unlike setUser(isActive: false) — submissions, certificates,
+  // video progress, self-review submissions and AI questions all cascade via
+  // their own FK. course_assignments.targetId is a plain text column (it has
+  // to hold either a user or a group id, so it can't be a real FK to users),
+  // so any assignment rows pointing at this user are cleaned up explicitly
+  // here rather than being left behind as orphans.
+  async deleteUser(userId: string): Promise<boolean> {
+    await db
+      .delete(courseAssignments)
+      .where(and(eq(courseAssignments.targetType, "user"), eq(courseAssignments.targetId, userId)));
+    const deleted = await db.delete(users).where(eq(users.id, userId)).returning({ id: users.id });
+    return deleted.length > 0;
+  },
+
   async regeneratePassword(userId: string, passwordHash: string, tempPassword: string): Promise<User | undefined> {
     const [updated] = await db
       .update(users)

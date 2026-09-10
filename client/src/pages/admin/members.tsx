@@ -13,6 +13,16 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table,
@@ -38,6 +48,7 @@ import {
   createUser,
   updateUser,
   setUserActive,
+  deleteUser,
   regenerateUserPassword,
   fetchGroupsLms,
   createGroupLms,
@@ -71,6 +82,8 @@ export default function AdminMembersPage() {
   const [editEmail, setEditEmail] = useState("");
   const [editGroupIds, setEditGroupIds] = useState<string[]>([]);
   const [editRole, setEditRole] = useState<"admin" | "learner">("learner");
+
+  const [deleteUserTarget, setDeleteUserTarget] = useState<LmsUser | null>(null);
 
   const openEditUser = (u: LmsUser) => {
     setEditingUser(u);
@@ -106,6 +119,16 @@ export default function AdminMembersPage() {
     onSuccess: (_result, variables) => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
       toast({ title: variables.isActive ? "ユーザーを有効化しました" : "ユーザーを無効化しました" });
+    },
+    onError: (err: Error) => toast({ title: err.message, variant: "destructive" }),
+  });
+
+  const deleteUserMutation = useMutation({
+    mutationFn: deleteUser,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
+      setDeleteUserTarget(null);
+      toast({ title: "ユーザーを削除しました" });
     },
     onError: (err: Error) => toast({ title: err.message, variant: "destructive" }),
   });
@@ -239,6 +262,17 @@ export default function AdminMembersPage() {
                             data-testid={`button-toggle-active-${u.id}`}
                           >
                             {u.isActive ? "無効化" : "有効化"}
+                          </Button>
+                        )}
+                        {u.id !== currentUser?.id && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setDeleteUserTarget(u)}
+                            className="text-destructive"
+                            data-testid={`button-delete-user-${u.id}`}
+                          >
+                            削除
                           </Button>
                         )}
                       </TableCell>
@@ -435,6 +469,29 @@ export default function AdminMembersPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={!!deleteUserTarget} onOpenChange={(open) => !open && setDeleteUserTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{deleteUserTarget?.name} さんを削除しますか？</AlertDialogTitle>
+            <AlertDialogDescription>
+              この操作は取り消せません。提出履歴・修了証・進捗・AI質問の記録もすべて削除されます。
+              一時的にログインできなくするだけでよければ、代わりに「無効化」をご利用ください。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>キャンセル</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => deleteUserTarget && deleteUserMutation.mutate(deleteUserTarget.id)}
+              disabled={deleteUserMutation.isPending}
+              className="bg-destructive text-destructive-foreground"
+              data-testid="button-confirm-delete-user"
+            >
+              削除
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </AdminLayout>
   );
 }

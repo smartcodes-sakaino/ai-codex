@@ -162,6 +162,10 @@ export async function setUserActive(id: string, isActive: boolean): Promise<LmsU
   return res.json();
 }
 
+export async function deleteUser(id: string): Promise<void> {
+  await apiRequest("DELETE", `/api/admin/users/${id}`);
+}
+
 // ============================================
 // Admin: Groups
 // ============================================
