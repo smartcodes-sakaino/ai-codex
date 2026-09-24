@@ -8,6 +8,8 @@ interface WorkerEnv {
   GOOGLE_SERVICE_ACCOUNT_JSON: string;
   DRIVE_IMAGES_FOLDER_ID: string;
   DRIVE_VIDEOS_FOLDER_ID: string;
+  SLACK_BOT_TOKEN?: string;
+  CRON_SECRET?: string;
 }
 
 async function initApp(env: WorkerEnv) {
@@ -20,6 +22,8 @@ async function initApp(env: WorkerEnv) {
   process.env.GOOGLE_SERVICE_ACCOUNT_JSON = env.GOOGLE_SERVICE_ACCOUNT_JSON;
   process.env.DRIVE_IMAGES_FOLDER_ID = env.DRIVE_IMAGES_FOLDER_ID;
   process.env.DRIVE_VIDEOS_FOLDER_ID = env.DRIVE_VIDEOS_FOLDER_ID;
+  if (env.SLACK_BOT_TOKEN) process.env.SLACK_BOT_TOKEN = env.SLACK_BOT_TOKEN;
+  if (env.CRON_SECRET) process.env.CRON_SECRET = env.CRON_SECRET;
 
   const { createApp } = await import("./app");
   const { setFontLoader } = await import("./lms/certificate");

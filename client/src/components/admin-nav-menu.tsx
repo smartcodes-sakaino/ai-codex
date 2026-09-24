@@ -1,10 +1,12 @@
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
+import { useQuery } from "@tanstack/react-query";
 import { Menu, LayoutDashboard, BookOpen, GraduationCap, Users, BarChart3, Sparkles, Award, LogOut, PlayCircle, Eye, KeyRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { useAuth } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
+import { fetchStagnationCount } from "@/lib/lmsApi";
 import mascotGraduate from "@assets/mascot-graduate.png";
 
 const NAV_ITEMS = [
@@ -24,12 +26,26 @@ export function AdminNavMenu() {
   const [open, setOpen] = useState(false);
   const [location] = useLocation();
   const { user, logout } = useAuth();
+  // Learners flagged 停滞 (14+ days idle) — shown as a badge on 進捗確認
+  // and as a dot on the menu button so it's visible without opening the menu.
+  const { data: stagnantCount = 0 } = useQuery({
+    queryKey: ["/api/admin/stagnation-count"],
+    queryFn: fetchStagnationCount,
+    enabled: user?.role === "admin",
+    staleTime: 5 * 60 * 1000,
+  });
 
   return (
     <Sheet open={open} onOpenChange={setOpen}>
       <SheetTrigger asChild>
-        <Button variant="ghost" size="icon" data-testid="button-open-admin-nav">
+        <Button variant="ghost" size="icon" className="relative" data-testid="button-open-admin-nav">
           <Menu className="h-5 w-5" />
+          {stagnantCount > 0 && (
+            <span
+              className="absolute top-1 right-1 h-2.5 w-2.5 rounded-full bg-[#E03131] ring-2 ring-background"
+              data-testid="dot-stagnation"
+            />
+          )}
         </Button>
       </SheetTrigger>
       <SheetContent
@@ -63,6 +79,15 @@ export function AdminNavMenu() {
               >
                 <Icon className="h-4 w-4" />
                 {item.label}
+                {item.href === "/admin/progress" && stagnantCount > 0 && (
+                  <span
+                    className="ml-auto min-w-5 h-5 px-1.5 rounded-full bg-[#E03131] text-white text-xs font-bold flex items-center justify-center"
+                    title={`停滞中の受講者 ${stagnantCount}人`}
+                    data-testid="badge-stagnation-count"
+                  >
+                    {stagnantCount}
+                  </span>
+                )}
               </Link>
             );
           })}

@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { Trash2, Edit2, ChevronUp, ChevronDown, CheckCircle, Circle, AlertTriangle, GripVertical } from "lucide-react";
+import { Trash2, Edit2, ChevronUp, ChevronDown, CheckCircle, Circle, AlertTriangle, GripVertical, Clock } from "lucide-react";
 import { Link } from "wouter";
 import type { Problem } from "@shared/schema";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,7 @@ interface ProblemCardProps {
   editMode: boolean;
   onDelete: (id: string) => void;
   onRename: (id: string, newTitle: string) => void;
+  onChangeHours: (id: string, hours: number) => void;
   onMoveUp: () => void;
   onMoveDown: () => void;
   isFirst: boolean;
@@ -43,6 +44,7 @@ export function ProblemCard({
   editMode,
   onDelete,
   onRename,
+  onChangeHours,
   onMoveUp,
   onMoveDown,
   isFirst,
@@ -58,6 +60,7 @@ export function ProblemCard({
 }: ProblemCardProps) {
   const [isRenaming, setIsRenaming] = useState(false);
   const [newTitle, setNewTitle] = useState(problem.title);
+  const [hours, setHours] = useState(String(problem.estimatedHours));
   // Native HTML5 drag-and-drop has no "drag by this handle only" primitive —
   // draggable has to live on the whole card, so this ref tracks whether the
   // mousedown that preceded dragstart actually landed on the grip icon, and
@@ -76,6 +79,17 @@ export function ProblemCard({
       onRename(problem.id, newTitle.trim());
     }
     setIsRenaming(false);
+  };
+
+  // Each hour is one day of a learner's due date, so only whole hours >= 1.
+  const handleHoursCommit = () => {
+    const parsed = Math.floor(Number(hours));
+    if (!Number.isFinite(parsed) || parsed < 1) {
+      setHours(String(problem.estimatedHours));
+      return;
+    }
+    setHours(String(parsed));
+    if (parsed !== problem.estimatedHours) onChangeHours(problem.id, parsed);
   };
 
   return (
@@ -143,6 +157,35 @@ export function ProblemCard({
             )}
           </div>
           <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
+            {editMode ? (
+              <span className="flex items-center gap-1 text-xs text-muted-foreground" title="目安時間（1時間＝期限1日）">
+                <Clock className="h-4 w-4" />
+                目安
+                <Input
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={hours}
+                  onChange={(e) => setHours(e.target.value)}
+                  onBlur={handleHoursCommit}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                  }}
+                  className="h-7 w-14 text-xs px-2"
+                  data-testid={`input-hours-${problem.id}`}
+                />
+                時間
+              </span>
+            ) : (
+              <span
+                className="flex items-center gap-1 text-xs text-muted-foreground"
+                title="目安時間（1時間＝期限1日）"
+                data-testid={`text-hours-${problem.id}`}
+              >
+                <Clock className="h-4 w-4" />
+                目安{problem.estimatedHours}時間
+              </span>
+            )}
             <span className="text-xs text-muted-foreground">
               {formattedDate}
             </span>

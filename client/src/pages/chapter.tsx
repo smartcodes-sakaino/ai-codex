@@ -97,7 +97,7 @@ export default function ChapterPage() {
   });
 
   const updateProblemMutation = useMutation({
-    mutationFn: ({ problemId, data }: { problemId: string; data: Partial<{ title: string }> }) =>
+    mutationFn: ({ problemId, data }: { problemId: string; data: Partial<{ title: string; estimatedHours: number }> }) =>
       updateProblem(problemId, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/chapters", id, "problems"] });
@@ -191,6 +191,10 @@ export default function ChapterPage() {
 
   const handleRenameProblem = (problemId: string, newTitle: string) => {
     updateProblemMutation.mutate({ problemId, data: { title: newTitle } });
+  };
+
+  const handleChangeProblemHours = (problemId: string, estimatedHours: number) => {
+    updateProblemMutation.mutate({ problemId, data: { estimatedHours } });
   };
 
   const handleMoveProblem = (problemId: string, direction: "up" | "down") => {
@@ -339,6 +343,7 @@ export default function ChapterPage() {
                 editMode={editMode}
                 onDelete={(id) => setDeleteProblemId(id)}
                 onRename={handleRenameProblem}
+                onChangeHours={handleChangeProblemHours}
                 onMoveUp={() => handleMoveProblem(problem.id, "up")}
                 onMoveDown={() => handleMoveProblem(problem.id, "down")}
                 isFirst={index === 0}

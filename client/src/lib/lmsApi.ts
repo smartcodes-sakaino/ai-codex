@@ -54,6 +54,11 @@ export interface RoadmapItem {
   gate: RoadmapGate;
   hasLecture: boolean;
   videoStarted: boolean;
+  estimatedHours: number;
+  /** "YYYY-MM-DD" (JST). On the current item (unless on pend) and on done items. */
+  dueDate: string | null;
+  completedDate: string | null;
+  onTime: boolean | null;
 }
 
 export interface AdminViewRoadmapItem {
@@ -86,6 +91,8 @@ export interface Submission {
   submittedAt: string;
 }
 
+export type LearnerStatus = "active" | "pend";
+
 export interface ProgressSummaryRow {
   userId: string;
   name: string;
@@ -94,6 +101,13 @@ export interface ProgressSummaryRow {
   passedCount: number;
   total: number;
   complete: boolean;
+  currentProblemTitle: string | null;
+  currentDueDate: string | null;
+  learnerStatus: LearnerStatus;
+  slackChannelId: string | null;
+  stagnant: boolean;
+  lastActivityDate: string | null;
+  daysIdle: number | null;
 }
 
 export interface LmsSettings {
@@ -242,9 +256,37 @@ export async function fetchCourseProgressDetail(courseId: string, userId: string
   return res.json();
 }
 
+export async function updateLearnerMonitoring(
+  userId: string,
+  data: { learnerStatus?: LearnerStatus; slackChannelId?: string | null }
+): Promise<{ learnerStatus: LearnerStatus; slackChannelId: string | null }> {
+  const res = await apiRequest("PATCH", `/api/admin/users/${userId}/monitoring`, data);
+  return res.json();
+}
+
+export async function fetchStagnationCount(): Promise<number> {
+  const res = await fetch("/api/admin/stagnation-count", { credentials: "include" });
+  if (!res.ok) throw new Error("Failed to fetch stagnation count");
+  return (await res.json()).count;
+}
+
 export async function exportCourseProgressSheet(courseId: string): Promise<{ url: string; fileName: string }> {
   const res = await apiRequest("POST", `/api/admin/courses/${courseId}/export`);
   return res.json();
+}
+
+const WEEKDAYS = ["日", "月", "火", "水", "木", "金", "土"];
+
+/** "2026-09-26" → "9/26(土)" */
+export function formatShortDate(ymd: string): string {
+  const [y, m, d] = ymd.split("-").map(Number);
+  const weekday = WEEKDAYS[new Date(Date.UTC(y, m - 1, d)).getUTCDay()];
+  return `${m}/${d}(${weekday})`;
+}
+
+/** Today's date in Japan time as "YYYY-MM-DD" — due dates are JST calendar days. */
+export function todayJst(): string {
+  return new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
 }
 
 // ============================================

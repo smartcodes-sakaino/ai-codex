@@ -24,6 +24,9 @@ export const problems = pgTable("problems", {
   chapterId: text("chapter_id").notNull().references(() => chapters.id, { onDelete: "cascade" }),
   title: text("title").notNull(),
   order: integer("order").notNull().default(0),
+  // Rough study time; each hour becomes one calendar day in a learner's due
+  // date for this problem (counted from the day they cleared the previous one).
+  estimatedHours: integer("estimated_hours").notNull().default(1),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -64,6 +67,17 @@ export const users = pgTable("users", {
   name: text("name").notNull(),
   role: text("role").notNull().default("learner"), // "admin" | "learner"
   isActive: boolean("is_active").notNull().default(true),
+  // Learner-level study status, set by an admin on the progress page. "pend"
+  // takes the learner out of due dates and stagnation monitoring entirely.
+  learnerStatus: text("learner_status").notNull().default("active"), // "active" | "pend"
+  // When the learner last came back from "pend" — the current problem's due
+  // date restarts from this day instead of from the previous clear date.
+  resumedAt: timestamp("resumed_at"),
+  // Optional Slack channel that also receives this learner's stagnation alerts.
+  slackChannelId: text("slack_channel_id"),
+  // Set when a stagnation alert has gone out, so one stalled stretch alerts
+  // once rather than every night; any newer activity starts a fresh stretch.
+  stagnationNotifiedAt: timestamp("stagnation_notified_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -174,6 +188,22 @@ export const aiQuestions = pgTable("ai_questions", {
   answer: text("answer").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
+
+// One row per problem a learner has cleared within a course, recording the
+// due date that applied at the time and whether it was met. Written lazily
+// the first time the roadmap sees the problem as done, with the clear time
+// taken from the passing submission / self-review / video watch itself.
+export const problemCompletions = pgTable("problem_completions", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  courseId: text("course_id").notNull().references(() => courses.id, { onDelete: "cascade" }),
+  problemId: text("problem_id").notNull().references(() => problems.id, { onDelete: "cascade" }),
+  dueDate: text("due_date"), // "YYYY-MM-DD" (JST), null when the learner was on pend
+  completedAt: timestamp("completed_at").notNull(),
+  onTime: boolean("on_time"),
+}, (table) => [
+  unique().on(table.userId, table.courseId, table.problemId),
+]);
 
 // ============================================
 // Relations
@@ -295,6 +325,10 @@ export const insertUserSchema = createInsertSchema(users).omit({
   passwordHash: true,
   tempPassword: true,
   isActive: true,
+  learnerStatus: true,
+  resumedAt: true,
+  slackChannelId: true,
+  stagnationNotifiedAt: true,
   createdAt: true,
 }).extend({
   name: z.string().min(1, "氏名が必要です").max(200),
@@ -308,6 +342,12 @@ export const updateUserSchema = z.object({
   groupIds: z.array(z.string()).optional(),
   isActive: z.boolean().optional(),
   role: z.enum(["admin", "learner"]).optional(),
+});
+
+// Set from the progress page — learner-level, so it applies across every course.
+export const updateLearnerMonitoringSchema = z.object({
+  learnerStatus: z.enum(["active", "pend"]).optional(),
+  slackChannelId: z.string().trim().max(50).nullable().optional(),
 });
 
 export const insertGroupSchema = createInsertSchema(groups).omit({
@@ -468,6 +508,7 @@ export interface ProblemWithBlocks extends Problem {
 export type User = typeof users.$inferSelect;
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type UpdateUser = z.infer<typeof updateUserSchema>;
+export type UpdateLearnerMonitoring = z.infer<typeof updateLearnerMonitoringSchema>;
 
 export type Group = typeof groups.$inferSelect;
 export type InsertGroup = z.infer<typeof insertGroupSchema>;
@@ -484,6 +525,7 @@ export type Settings = typeof settings.$inferSelect;
 export type VideoProgress = typeof videoProgress.$inferSelect;
 export type SelfReviewSubmission = typeof selfReviewSubmissions.$inferSelect;
 export type AiQuestion = typeof aiQuestions.$inferSelect;
+export type ProblemCompletion = typeof problemCompletions.$inferSelect;
 
 export type LoginInput = z.infer<typeof loginSchema>;
 export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
@@ -520,6 +562,13 @@ export interface RoadmapItem {
   hasLecture: boolean;
   /** True when the gating video has been started but not yet finished, for a "視聴中" cue on the current item. */
   videoStarted: boolean;
+  estimatedHours: number;
+  /** "YYYY-MM-DD" (JST). Set on the current item (unless the learner is on pend) and on done items. */
+  dueDate: string | null;
+  /** "YYYY-MM-DD" (JST) the item was cleared, for done items. */
+  completedDate: string | null;
+  /** Whether a done item was cleared by its due date (null when there was no due date). */
+  onTime: boolean | null;
 }
 
 export interface CourseProgressSummary {

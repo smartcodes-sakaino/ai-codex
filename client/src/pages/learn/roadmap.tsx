@@ -1,9 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
 import { useParams, Link } from "wouter";
-import { BookOpen, PlayCircle } from "lucide-react";
+import { BookOpen, PlayCircle, CalendarDays } from "lucide-react";
 import { LearnerLayout } from "@/components/learner-layout";
 import { Button } from "@/components/ui/button";
-import { fetchMyCourses, fetchMyRoadmap, type RoadmapItem } from "@/lib/lmsApi";
+import { fetchMyCourses, fetchMyRoadmap, formatShortDate, todayJst, type RoadmapItem } from "@/lib/lmsApi";
 
 export default function LearnerRoadmapPage() {
   const { id: courseId } = useParams<{ id: string }>();
@@ -27,6 +27,7 @@ export default function LearnerRoadmapPage() {
   }
 
   const complete = course?.progress.complete;
+  const today = todayJst();
 
   return (
     <LearnerLayout title={course?.title || "コース"} backHref="/learn" backLabel="マイコース一覧へ">
@@ -92,6 +93,20 @@ export default function LearnerRoadmapPage() {
                     >
                       <PlayCircle className="h-3.5 w-3.5" />
                       視聴中
+                    </span>
+                  )}
+                  {item.status === "current" && item.dueDate && (
+                    <span
+                      className={
+                        "flex items-center gap-1 text-xs font-medium " +
+                        (item.dueDate < today ? "text-[#E03131]" : "text-[#8A4B00]")
+                      }
+                      data-testid={`text-due-${item.problemId}`}
+                    >
+                      <CalendarDays className="h-3.5 w-3.5" />
+                      {item.dueDate < today
+                        ? `${formatShortDate(item.dueDate)} 期限（超過）`
+                        : `${formatShortDate(item.dueDate)} までにクリア`}
                     </span>
                   )}
                   {item.attempts > 0 && (

@@ -1,0 +1,22 @@
+name: Nightly stagnation check
+
+# Runs the learner stagnation check (and Slack alerts) every day at 00:00 JST.
+# The production app scales to zero when idle, so it can't keep its own timer;
+# this request both wakes it and triggers the check.
+on:
+  schedule:
+    - cron: "0 15 * * *" # 15:00 UTC = 00:00 JST
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call stagnation check endpoint
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          curl --fail-with-body --silent --show-error --max-time 300 \
+            -X POST \
+            -H "Authorization: Bearer ${CRON_SECRET}" \
+            https://ai-codex.replit.app/api/cron/stagnation-check

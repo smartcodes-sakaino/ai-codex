@@ -11,6 +11,7 @@ import {
   videoProgress,
   selfReviewSubmissions,
   aiQuestions,
+  problemCompletions,
   chapters,
   problems,
   type User,
@@ -22,11 +23,12 @@ import {
   type VideoProgress,
   type SelfReviewSubmission,
   type AiQuestion,
+  type ProblemCompletion,
   type UserWithGroups,
   type CourseWithDetails,
 } from "@shared/schema";
 import { db } from "../db";
-import { eq, and, inArray } from "drizzle-orm";
+import { eq, and, inArray, desc } from "drizzle-orm";
 import { randomUUID } from "crypto";
 
 export const lmsStorage = {
@@ -263,10 +265,24 @@ export const lmsStorage = {
       );
     }
 
-    await db.delete(courseAssignments).where(eq(courseAssignments.courseId, id));
-    if (data.assignments.length > 0) {
+    // Assignments are diffed rather than replaced, because assignedAt is the
+    // starting point for a learner's first due date — re-saving the course
+    // (e.g. to add a chapter) mustn't reset it for everyone already enrolled.
+    const existingAssignments = await db
+      .select()
+      .from(courseAssignments)
+      .where(eq(courseAssignments.courseId, id));
+    const key = (type: string, targetId: string) => `${type}:${targetId}`;
+    const wanted = new Set(data.assignments.map((a) => key(a.type, a.id)));
+    const existingKeys = new Set(existingAssignments.map((r) => key(r.targetType, r.targetId)));
+    const removedIds = existingAssignments.filter((r) => !wanted.has(key(r.targetType, r.targetId))).map((r) => r.id);
+    if (removedIds.length > 0) {
+      await db.delete(courseAssignments).where(inArray(courseAssignments.id, removedIds));
+    }
+    const added = data.assignments.filter((a) => !existingKeys.has(key(a.type, a.id)));
+    if (added.length > 0) {
       await db.insert(courseAssignments).values(
-        data.assignments.map((a) => ({
+        added.map((a) => ({
           id: randomUUID(),
           courseId: id,
           targetType: a.type,
@@ -305,6 +321,31 @@ export const lmsStorage = {
     return await db.select().from(users).where(inArray(users.id, Array.from(userIds)));
   },
 
+  /**
+   * When the user was first assigned this course (directly or via a group) —
+   * the starting point for their first problem's due date.
+   */
+  async getAssignedAt(userId: string, courseId: string): Promise<Date | undefined> {
+    const memberships = await db.select().from(userGroups).where(eq(userGroups.userId, userId));
+    const groupIds = memberships.map((m) => m.groupId);
+    const rows = await db.select().from(courseAssignments).where(eq(courseAssignments.courseId, courseId));
+    const dates = rows
+      .filter((a) => (a.targetType === "user" && a.targetId === userId) || (a.targetType === "group" && groupIds.includes(a.targetId)))
+      .map((a) => a.assignedAt.getTime());
+    return dates.length > 0 ? new Date(Math.min(...dates)) : undefined;
+  },
+
+  /** The most recent time the user was assigned any course — a floor for "last activity". */
+  async getLatestAssignedAt(userId: string): Promise<Date | undefined> {
+    const memberships = await db.select().from(userGroups).where(eq(userGroups.userId, userId));
+    const groupIds = memberships.map((m) => m.groupId);
+    const rows = await db.select().from(courseAssignments);
+    const dates = rows
+      .filter((a) => (a.targetType === "user" && a.targetId === userId) || (a.targetType === "group" && groupIds.includes(a.targetId)))
+      .map((a) => a.assignedAt.getTime());
+    return dates.length > 0 ? new Date(Math.max(...dates)) : undefined;
+  },
+
   /** Resolves the courses assigned to a given user (direct + via their groups). */
   async coursesForUser(userId: string): Promise<CourseWithDetails[]> {
     const memberships = await db.select().from(userGroups).where(eq(userGroups.userId, userId));
@@ -323,14 +364,14 @@ export const lmsStorage = {
   },
 
   /** Flattens a course's chapters (in order) into an ordered list of problems. */
-  async flattenCourse(courseId: string): Promise<{ chapterId: string; chapterTitle: string; problemId: string; problemTitle: string }[]> {
+  async flattenCourse(courseId: string): Promise<{ chapterId: string; chapterTitle: string; problemId: string; problemTitle: string; estimatedHours: number }[]> {
     const chapterRows = await db
       .select()
       .from(courseChapters)
       .where(eq(courseChapters.courseId, courseId))
       .orderBy(courseChapters.order);
 
-    const result: { chapterId: string; chapterTitle: string; problemId: string; problemTitle: string }[] = [];
+    const result: { chapterId: string; chapterTitle: string; problemId: string; problemTitle: string; estimatedHours: number }[] = [];
     for (const row of chapterRows) {
       const [chapter] = await db.select().from(chapters).where(eq(chapters.id, row.chapterId));
       if (!chapter) continue;
@@ -340,7 +381,7 @@ export const lmsStorage = {
         .where(eq(problems.chapterId, row.chapterId))
         .orderBy(problems.order);
       for (const p of problemRows) {
-        result.push({ chapterId: chapter.id, chapterTitle: chapter.title, problemId: p.id, problemTitle: p.title });
+        result.push({ chapterId: chapter.id, chapterTitle: chapter.title, problemId: p.id, problemTitle: p.title, estimatedHours: p.estimatedHours });
       }
     }
     return result;
@@ -523,6 +564,74 @@ export const lmsStorage = {
       .values({ id: randomUUID(), ...data })
       .returning();
     return created;
+  },
+
+  // The learner's most recent action of any kind — a submission, a self-review,
+  // any video watching, or a question to the AI corner. Used for stagnation.
+  async getLastActivityAt(userId: string): Promise<Date | undefined> {
+    const [sub] = await db.select({ at: submissions.submittedAt }).from(submissions)
+      .where(eq(submissions.userId, userId)).orderBy(desc(submissions.submittedAt)).limit(1);
+    const [sr] = await db.select({ at: selfReviewSubmissions.submittedAt }).from(selfReviewSubmissions)
+      .where(eq(selfReviewSubmissions.userId, userId)).orderBy(desc(selfReviewSubmissions.submittedAt)).limit(1);
+    const [vp] = await db.select({ at: videoProgress.updatedAt }).from(videoProgress)
+      .where(eq(videoProgress.userId, userId)).orderBy(desc(videoProgress.updatedAt)).limit(1);
+    const [aq] = await db.select({ at: aiQuestions.createdAt }).from(aiQuestions)
+      .where(eq(aiQuestions.userId, userId)).orderBy(desc(aiQuestions.createdAt)).limit(1);
+    const times = [sub?.at, sr?.at, vp?.at, aq?.at].filter((d): d is Date => !!d).map((d) => d.getTime());
+    return times.length > 0 ? new Date(Math.max(...times)) : undefined;
+  },
+
+  // ============================================
+  // Problem completions (due-date achievement records)
+  // ============================================
+
+  async getCompletionsFor(userId: string, courseId: string): Promise<ProblemCompletion[]> {
+    return await db
+      .select()
+      .from(problemCompletions)
+      .where(and(eq(problemCompletions.userId, userId), eq(problemCompletions.courseId, courseId)));
+  },
+
+  async createCompletion(data: {
+    userId: string;
+    courseId: string;
+    problemId: string;
+    dueDate: string | null;
+    completedAt: Date;
+    onTime: boolean | null;
+  }): Promise<void> {
+    await db
+      .insert(problemCompletions)
+      .values({ id: randomUUID(), ...data })
+      .onConflictDoNothing();
+  },
+
+  // ============================================
+  // Learner monitoring (status / Slack / stagnation)
+  // ============================================
+
+  async updateLearnerMonitoring(
+    userId: string,
+    data: { learnerStatus?: "active" | "pend"; slackChannelId?: string | null }
+  ): Promise<User | undefined> {
+    const current = await this.getUserById(userId);
+    if (!current) return undefined;
+    const fields: Partial<Pick<User, "learnerStatus" | "resumedAt" | "slackChannelId">> = {};
+    if (data.learnerStatus !== undefined && data.learnerStatus !== current.learnerStatus) {
+      fields.learnerStatus = data.learnerStatus;
+      // Coming back from pend restarts the current problem's clock from today.
+      if (data.learnerStatus === "active") fields.resumedAt = new Date();
+    }
+    if (data.slackChannelId !== undefined) {
+      fields.slackChannelId = data.slackChannelId ? data.slackChannelId : null;
+    }
+    if (Object.keys(fields).length === 0) return current;
+    const [row] = await db.update(users).set(fields).where(eq(users.id, userId)).returning();
+    return row;
+  },
+
+  async setStagnationNotifiedAt(userId: string, at: Date): Promise<void> {
+    await db.update(users).set({ stagnationNotifiedAt: at }).where(eq(users.id, userId));
   },
 
   // Admin-only metric — how many questions a learner has asked on a given

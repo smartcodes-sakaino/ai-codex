@@ -10,6 +10,7 @@ import {
   submitAnswerSchema,
   updateVideoProgressSchema,
   askAiQuestionSchema,
+  updateLearnerMonitoringSchema,
 } from "@shared/schema";
 import { lmsStorage } from "./storage";
 import { hashPassword, verifyPassword, generateTempPassword, requireAuth, requireRole, type AuthedRequest } from "./auth";
@@ -18,6 +19,8 @@ import { runLmsCheck, runAiQuestion, AiUnavailableError, type LmsCheckResult } f
 import { objectStorageService } from "./certificate";
 import { exportCourseProgress } from "./export";
 import { storage } from "../storage";
+import { getStagnation, countStagnantLearners, runStagnationCheck } from "./stagnation";
+import { timingSafeEqual } from "crypto";
 
 export function registerLmsRoutes(app: Express): void {
   const requireAdmin = [requireAuth, requireRole("admin")] as const;
@@ -286,8 +289,18 @@ export function registerLmsRoutes(app: Express): void {
     const learners = await lmsStorage.usersForCourse(course.id);
     const summaries = await Promise.all(
       learners.map(async (u) => {
-        const progress = await getCourseProgress(u.id, course.id);
-        return { userId: u.id, name: u.name, email: u.email, ...progress };
+        const [progress, stagnation] = await Promise.all([getCourseProgress(u.id, course.id), getStagnation(u)]);
+        return {
+          userId: u.id,
+          name: u.name,
+          email: u.email,
+          ...progress,
+          learnerStatus: u.learnerStatus,
+          slackChannelId: u.slackChannelId,
+          stagnant: stagnation.stagnant,
+          lastActivityDate: stagnation.lastActivityDate,
+          daysIdle: stagnation.daysIdle,
+        };
       })
     );
     res.json(summaries);
@@ -305,6 +318,25 @@ export function registerLmsRoutes(app: Express): void {
     res.json(details);
   });
 
+  // Learner-level status ("active" / "pend") and Slack channel, edited inline
+  // on the progress page.
+  app.patch<{ id: string }>("/api/admin/users/:id/monitoring", ...requireAdmin, async (req: Request, res: Response) => {
+    const parsed = updateLearnerMonitoringSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: parsed.error.errors[0]?.message || "入力が無効です" });
+    }
+    const updated = await lmsStorage.updateLearnerMonitoring(req.params.id as string, parsed.data);
+    if (!updated) {
+      return res.status(404).json({ error: "ユーザーが見つかりません" });
+    }
+    res.json({ learnerStatus: updated.learnerStatus, slackChannelId: updated.slackChannelId });
+  });
+
+  // Drives the notification badge on the admin nav's 進捗確認 item.
+  app.get("/api/admin/stagnation-count", ...requireAdmin, async (_req, res) => {
+    res.json({ count: await countStagnantLearners() });
+  });
+
   app.post<{ id: string }>("/api/admin/courses/:id/export", ...requireAdmin, async (req: Request, res: Response) => {
     try {
       const course = await lmsStorage.getCourse((req.params.id as string));
@@ -317,6 +349,23 @@ export function registerLmsRoutes(app: Express): void {
       console.error("Export error:", error);
       res.status(500).json({ error: "エクスポートに失敗しました。Google Sheets APIが有効化・権限設定されているか確認してください" });
     }
+  });
+
+  // ============================================
+  // Cron: nightly stagnation check (called by GitHub Actions at 00:00 JST)
+  // ============================================
+
+  app.post("/api/cron/stagnation-check", async (req: Request, res: Response) => {
+    const secret = process.env.CRON_SECRET;
+    if (!secret) {
+      return res.status(503).json({ error: "CRON_SECRET is not configured" });
+    }
+    const given = Buffer.from(req.get("authorization")?.replace(/^Bearer\s+/i, "") ?? "");
+    const expected = Buffer.from(secret);
+    if (given.length !== expected.length || !timingSafeEqual(given, expected)) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    res.json(await runStagnationCheck());
   });
 
   // ============================================

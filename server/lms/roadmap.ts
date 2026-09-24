@@ -1,6 +1,7 @@
 import { lmsStorage } from "./storage";
 import { storage } from "../storage";
 import { issueCertificateIfNeeded } from "./certificate";
+import { toJstDate, addDays, maxDate } from "./dates";
 import type { ProblemStatus, RoadmapItem, RoadmapGate as Gate } from "@shared/schema";
 
 interface ProblemMeta {
@@ -27,21 +28,26 @@ async function resolveProblemMeta(problemId: string): Promise<ProblemMeta> {
   return { gate, hasLecture, videoBlockIds };
 }
 
-async function isPassed(userId: string, courseId: string, problemId: string, meta: ProblemMeta): Promise<boolean> {
+// When the learner cleared this problem, or null if they haven't yet. The
+// time comes from the passing record itself, so the due-date bookkeeping below
+// can use it even when it only notices the pass later.
+async function getPassedAt(userId: string, courseId: string, problemId: string, meta: ProblemMeta): Promise<Date | null> {
   if (meta.gate === "self_review") {
     const attempts = await lmsStorage.getSelfReviewSubmissionsFor(userId, problemId);
-    return attempts.some((a) => a.verdict === "pass");
+    return attempts.find((a) => a.verdict === "pass")?.submittedAt ?? null;
   }
   if (meta.gate === "video") {
-    if (meta.videoBlockIds.length === 0) return false;
+    if (meta.videoBlockIds.length === 0) return null;
+    let latest: Date | null = null;
     for (const blockId of meta.videoBlockIds) {
       const progress = await lmsStorage.getVideoProgress(userId, blockId);
-      if (!progress?.completed) return false;
+      if (!progress?.completed) return null;
+      if (!latest || progress.updatedAt > latest) latest = progress.updatedAt;
     }
-    return true;
+    return latest;
   }
   const attempts = await lmsStorage.getSubmissionsFor(userId, courseId, problemId);
-  return attempts.some((a) => a.verdict === "pass");
+  return attempts.find((a) => a.verdict === "pass")?.submittedAt ?? null;
 }
 
 // True once any gating video has been watched partway but not finished — a
@@ -78,24 +84,71 @@ export async function getAdminViewRoadmap(courseId: string): Promise<AdminViewRo
   }));
 }
 
+// Due dates: each problem is due estimatedHours calendar days after the day
+// the previous one was cleared (the first one counts from the day the course
+// was assigned). A learner on "pend" gets no due date; one who has come back
+// from pend has the current problem's clock restart from that day.
 export async function getRoadmap(userId: string, courseId: string): Promise<RoadmapItem[]> {
-  const flat = await lmsStorage.flattenCourse(courseId);
+  const [flat, user, completions, assignedAt] = await Promise.all([
+    lmsStorage.flattenCourse(courseId),
+    lmsStorage.getUserById(userId),
+    lmsStorage.getCompletionsFor(userId, courseId),
+    lmsStorage.getAssignedAt(userId, courseId),
+  ]);
+  const onPend = user?.learnerStatus === "pend";
+  const resumedAt = user?.resumedAt ?? null;
+  const completionByProblem = new Map(completions.map((c) => [c.problemId, c]));
 
   const metas = await Promise.all(flat.map((item) => resolveProblemMeta(item.problemId)));
-  const passedFlags = await Promise.all(
-    flat.map((item, i) => isPassed(userId, courseId, item.problemId, metas[i]))
+  const passedAts = await Promise.all(
+    flat.map((item, i) => getPassedAt(userId, courseId, item.problemId, metas[i]))
   );
 
-  let currentIndex = passedFlags.findIndex((passed) => !passed);
+  let currentIndex = passedAts.findIndex((at) => !at);
   if (currentIndex === -1) currentIndex = flat.length;
 
+  let prevDate = toJstDate(assignedAt ?? user?.createdAt ?? new Date());
   const result: RoadmapItem[] = [];
   for (let i = 0; i < flat.length; i++) {
     const attempts = await lmsStorage.getSubmissionsFor(userId, courseId, flat[i].problemId);
-    const status: ProblemStatus = passedFlags[i] ? "done" : i === currentIndex ? "current" : "locked";
+    const passedAt = passedAts[i];
+    const status: ProblemStatus = passedAt ? "done" : i === currentIndex ? "current" : "locked";
     // Only the current item's watch-in-progress state is useful to show — a
     // locked item can't be watched yet, and a done one no longer needs it.
     const videoStarted = status === "current" ? await isVideoStarted(userId, metas[i]) : false;
+
+    let dueDate: string | null = null;
+    let completedDate: string | null = null;
+    let onTime: boolean | null = null;
+    if (passedAt) {
+      let record = completionByProblem.get(flat[i].problemId);
+      if (!record) {
+        // First time this pass is seen: freeze the due date that applied and
+        // whether it was met, so later changes (estimated hours, pend) don't
+        // rewrite history.
+        const resumedBeforePass = resumedAt && resumedAt <= passedAt ? toJstDate(resumedAt) : null;
+        const due = onPend ? null : addDays(maxDate(prevDate, resumedBeforePass), flat[i].estimatedHours);
+        const done = toJstDate(passedAt);
+        const data = {
+          userId,
+          courseId,
+          problemId: flat[i].problemId,
+          dueDate: due,
+          completedAt: passedAt,
+          onTime: due ? done <= due : null,
+        };
+        await lmsStorage.createCompletion(data);
+        record = { id: "", ...data };
+      }
+      dueDate = record.dueDate;
+      completedDate = toJstDate(record.completedAt);
+      onTime = record.onTime;
+      prevDate = completedDate;
+    } else if (status === "current" && !onPend) {
+      const resumedDate = resumedAt ? toJstDate(resumedAt) : null;
+      dueDate = addDays(maxDate(prevDate, resumedDate), flat[i].estimatedHours);
+    }
+
     result.push({
       ...flat[i],
       status,
@@ -103,6 +156,9 @@ export async function getRoadmap(userId: string, courseId: string): Promise<Road
       gate: metas[i].gate,
       hasLecture: metas[i].hasLecture,
       videoStarted,
+      dueDate,
+      completedDate,
+      onTime,
     });
   }
   return result;
@@ -111,11 +167,14 @@ export async function getRoadmap(userId: string, courseId: string): Promise<Road
 export async function getCourseProgress(userId: string, courseId: string) {
   const roadmap = await getRoadmap(userId, courseId);
   const passedCount = roadmap.filter((r) => r.status === "done").length;
+  const current = roadmap.find((r) => r.status === "current");
   return {
     courseId,
     passedCount,
     total: roadmap.length,
     complete: roadmap.length > 0 && passedCount === roadmap.length,
+    currentProblemTitle: current?.problemTitle ?? null,
+    currentDueDate: current?.dueDate ?? null,
   };
 }
 
