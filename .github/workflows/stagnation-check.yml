@@ -15,8 +15,10 @@ jobs:
       - name: Call stagnation check endpoint
         env:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        # -d "" makes curl send Content-Length: 0 — Replit's front end rejects
+        # a bodyless POST without it (411 Length Required).
         run: |
           curl --fail-with-body --silent --show-error --max-time 300 \
-            -X POST \
+            -X POST -d "" \
             -H "Authorization: Bearer ${CRON_SECRET}" \
             https://ai-codex.replit.app/api/cron/stagnation-check

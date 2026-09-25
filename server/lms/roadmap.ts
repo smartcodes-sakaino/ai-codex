@@ -2,7 +2,8 @@ import { lmsStorage } from "./storage";
 import { storage } from "../storage";
 import { issueCertificateIfNeeded } from "./certificate";
 import { toJstDate, addDays, maxDate } from "./dates";
-import type { ProblemStatus, RoadmapItem, RoadmapGate as Gate } from "@shared/schema";
+import { isSlackConfigured, postSlackMessage } from "./slack";
+import type { ProblemStatus, RoadmapItem, RoadmapGate as Gate, User } from "@shared/schema";
 
 interface ProblemMeta {
   gate: Gate;
@@ -84,6 +85,34 @@ export async function getAdminViewRoadmap(courseId: string): Promise<AdminViewRo
   }));
 }
 
+// Only passes this recent get the late-clear message — the first roadmap load
+// after this feature shipped backfills records for old passes, and those
+// mustn't turn into a burst of messages about long-finished problems.
+const LATE_NOTICE_WINDOW_MS = 3 * 24 * 60 * 60 * 1000;
+
+function formatMd(ymd: string): string {
+  const [, m, d] = ymd.split("-");
+  return `${Number(m)}/${Number(d)}`;
+}
+
+// Sent to the learner's own Slack channel when they clear a problem after its
+// due date — a gentle prompt to reflect, not a reprimand. Fire-and-forget:
+// a Slack failure must never break the roadmap request that noticed the pass.
+function sendLateClearNotice(user: User, problemTitle: string, dueDate: string, completedAt: Date): void {
+  if (!user.slackChannelId || !isSlackConfigured()) return;
+  if (Date.now() - completedAt.getTime() > LATE_NOTICE_WINDOW_MS) return;
+  const text = [
+    `:tada: ${user.name} さん、「${problemTitle}」クリアおめでとうございます！`,
+    `今回は目安の期限（${formatMd(dueDate)}）より少し時間がかかったようですね。`,
+    `もしよければ、どんなところに時間がかかったのか振り返って、このスレッドで教えてもらえると嬉しいです :relaxed:`,
+    `（例：〇〇の理解に苦戦した／別の予定が入って進められなかった など）`,
+    `次のレッスンを進めるときのヒントにしていきましょう！`,
+  ].join("\n");
+  postSlackMessage(user.slackChannelId, text).catch((error) => {
+    console.error(`Late-clear Slack notice failed for ${user.id}:`, error);
+  });
+}
+
 // Due dates: each problem is due estimatedHours calendar days after the day
 // the previous one was cleared (the first one counts from the day the course
 // was assigned). A learner on "pend" gets no due date; one who has come back
@@ -137,7 +166,10 @@ export async function getRoadmap(userId: string, courseId: string): Promise<Road
           completedAt: passedAt,
           onTime: due ? done <= due : null,
         };
-        await lmsStorage.createCompletion(data);
+        const created = await lmsStorage.createCompletion(data);
+        if (created && user && due && !data.onTime) {
+          sendLateClearNotice(user, flat[i].problemTitle, due, passedAt);
+        }
         record = { id: "", ...data };
       }
       dueDate = record.dueDate;

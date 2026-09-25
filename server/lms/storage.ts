@@ -599,11 +599,15 @@ export const lmsStorage = {
     dueDate: string | null;
     completedAt: Date;
     onTime: boolean | null;
-  }): Promise<void> {
-    await db
+  }): Promise<boolean> {
+    // Returns whether this call actually created the row, so a follow-up
+    // (the late-clear Slack message) fires once even if two requests race.
+    const inserted = await db
       .insert(problemCompletions)
       .values({ id: randomUUID(), ...data })
-      .onConflictDoNothing();
+      .onConflictDoNothing()
+      .returning({ id: problemCompletions.id });
+    return inserted.length > 0;
   },
 
   // ============================================
