@@ -232,7 +232,11 @@ export default function AdminArticleCategoryPage() {
                     </Button>
                   </div>
                 )}
-                <Link href={`/admin/articles/${article.id}/edit`} className="flex-1 min-w-0">
+                {/* Outside edit mode the list is for reading and sharing, so the title opens the article itself. */}
+                <Link
+                  href={editMode ? `/admin/articles/${article.id}/edit` : `/articles/${article.id}`}
+                  className="flex-1 min-w-0"
+                >
                   <h3 className="font-semibold truncate hover:underline" data-testid={`text-article-title-${article.id}`}>
                     {article.title}
                   </h3>
@@ -242,18 +246,22 @@ export default function AdminArticleCategoryPage() {
                   </p>
                 </Link>
                 <div className="flex items-center gap-2 flex-wrap">
-                  <Link href={`/admin/articles/${article.id}/edit`}>
-                    <Button variant="outline" size="sm" data-testid={`button-edit-article-${article.id}`}>
-                      <Pencil className="h-4 w-4 mr-1" />
-                      編集
-                    </Button>
-                  </Link>
-                  <Link href={`/articles/${article.id}`}>
-                    <Button variant="outline" size="sm" data-testid={`button-view-article-${article.id}`}>
-                      <Eye className="h-4 w-4 mr-1" />
-                      表示
-                    </Button>
-                  </Link>
+                  {editMode && (
+                    <>
+                      <Link href={`/admin/articles/${article.id}/edit`}>
+                        <Button variant="outline" size="sm" data-testid={`button-edit-article-${article.id}`}>
+                          <Pencil className="h-4 w-4 mr-1" />
+                          編集
+                        </Button>
+                      </Link>
+                      <Link href={`/articles/${article.id}`}>
+                        <Button variant="outline" size="sm" data-testid={`button-view-article-${article.id}`}>
+                          <Eye className="h-4 w-4 mr-1" />
+                          表示
+                        </Button>
+                      </Link>
+                    </>
+                  )}
                   <Button
                     variant="outline"
                     size="sm"
