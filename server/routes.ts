@@ -8,6 +8,7 @@ import { registerArticleRoutes } from "./lms/articles";
 import { lmsStorage } from "./lms/storage";
 import { runSelfReviewCheck, AiUnavailableError, processTemplate } from "./lms/aiCheck";
 import { checkAndIssueCertificatesForProblem } from "./lms/roadmap";
+import { requireAuth, requireRole, type AuthedRequest } from "./lms/auth";
 import { z } from "zod";
 import { randomUUID } from "crypto";
 
@@ -88,6 +89,15 @@ const DEFAULT_REVIEW_TEMPLATE = `#命令書:
 絶対に直さなければいけないところを列挙。指摘だけで済む場合など、修正点がない場合は無しでOK。`;
 
 export async function registerRoutes(app: Express): Promise<void> {
+  // The curriculum editor (chapters/problems/blocks/prompts/AI tools) is admin-only.
+  // Learners get read access only to what client/src/pages/learn/* fetches, and
+  // the token-based self-review endpoints stay public (used without login).
+  const requireAdmin = [requireAuth, requireRole("admin")] as const;
+  const requireLearner = [requireAuth, requireRole(["learner", "admin"])] as const;
+
+  // Only the admin editors upload files; serving them (/objects/*) is unchanged.
+  app.use("/api/uploads", ...requireAdmin);
+
   // Register object storage routes for file uploads
   registerObjectStorageRoutes(app);
 
@@ -102,7 +112,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   // ============================================
 
   // Get all chapters with problem counts
-  app.get("/api/chapters", async (req, res) => {
+  app.get("/api/chapters", ...requireAdmin, async (req, res) => {
     try {
       const chapters = await storage.getChapters();
       res.json(chapters);
@@ -113,7 +123,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   // Get all genres
-  app.get("/api/genres", async (req, res) => {
+  app.get("/api/genres", ...requireAdmin, async (req, res) => {
     try {
       const genres = await storage.getGenres();
       res.json(genres);
@@ -124,9 +134,9 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   // Get a single chapter
-  app.get("/api/chapters/:id", async (req, res) => {
+  app.get("/api/chapters/:id", ...requireAdmin, async (req, res) => {
     try {
-      const chapter = await storage.getChapter(req.params.id);
+      const chapter = await storage.getChapter((req.params.id as string));
       if (!chapter) {
         return res.status(404).json({ error: "チャプターが見つかりません" });
       }
@@ -138,7 +148,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   // Create a new chapter
-  app.post("/api/chapters", async (req, res) => {
+  app.post("/api/chapters", ...requireAdmin, async (req, res) => {
     try {
       const parsed = insertChapterSchema.safeParse(req.body);
       if (!parsed.success) {
@@ -153,9 +163,9 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   // Update a chapter
-  app.patch("/api/chapters/:id", async (req, res) => {
+  app.patch("/api/chapters/:id", ...requireAdmin, async (req, res) => {
     try {
-      const chapter = await storage.updateChapter(req.params.id, req.body);
+      const chapter = await storage.updateChapter((req.params.id as string), req.body);
       if (!chapter) {
         return res.status(404).json({ error: "チャプターが見つかりません" });
       }
@@ -167,9 +177,9 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   // Delete a chapter
-  app.delete("/api/chapters/:id", async (req, res) => {
+  app.delete("/api/chapters/:id", ...requireAdmin, async (req, res) => {
     try {
-      await storage.deleteChapter(req.params.id);
+      await storage.deleteChapter((req.params.id as string));
       res.status(204).send();
     } catch (error) {
       console.error("Error deleting chapter:", error);
@@ -178,7 +188,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   // Reorder chapters
-  app.post("/api/chapters/reorder", async (req, res) => {
+  app.post("/api/chapters/reorder", ...requireAdmin, async (req, res) => {
     try {
       const { orderedIds } = req.body;
       if (!Array.isArray(orderedIds)) {
@@ -197,9 +207,9 @@ export async function registerRoutes(app: Express): Promise<void> {
   // ============================================
 
   // Get problems for a chapter
-  app.get("/api/chapters/:chapterId/problems", async (req, res) => {
+  app.get("/api/chapters/:chapterId/problems", ...requireAdmin, async (req, res) => {
     try {
-      const problems = await storage.getProblems(req.params.chapterId);
+      const problems = await storage.getProblems((req.params.chapterId as string));
       res.json(problems);
     } catch (error) {
       console.error("Error fetching problems:", error);
@@ -208,11 +218,16 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   // Get a single problem with blocks
-  app.get("/api/problems/:id", async (req, res) => {
+  app.get("/api/problems/:id", ...requireLearner, async (req: AuthedRequest, res) => {
     try {
-      const problem = await storage.getProblemWithBlocks(req.params.id);
+      const problem = await storage.getProblemWithBlocks((req.params.id as string));
       if (!problem) {
         return res.status(404).json({ error: "問題が見つかりません" });
+      }
+      // Learners only need the blocks their page renders; "code" (模範解答) and
+      // "text" (解説) stay admin-only so they can't be read via the API.
+      if (req.user?.role !== "admin") {
+        return res.json({ ...problem, blocks: problem.blocks.filter((b) => b.type !== "code" && b.type !== "text") });
       }
       res.json(problem);
     } catch (error) {
@@ -222,7 +237,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   // Create a new problem
-  app.post("/api/problems", async (req, res) => {
+  app.post("/api/problems", ...requireAdmin, async (req, res) => {
     try {
       const parsed = insertProblemSchema.safeParse(req.body);
       if (!parsed.success) {
@@ -237,9 +252,9 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   // Update a problem
-  app.patch("/api/problems/:id", async (req, res) => {
+  app.patch("/api/problems/:id", ...requireAdmin, async (req, res) => {
     try {
-      const problem = await storage.updateProblem(req.params.id, req.body);
+      const problem = await storage.updateProblem((req.params.id as string), req.body);
       if (!problem) {
         return res.status(404).json({ error: "問題が見つかりません" });
       }
@@ -251,9 +266,9 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   // Delete a problem
-  app.delete("/api/problems/:id", async (req, res) => {
+  app.delete("/api/problems/:id", ...requireAdmin, async (req, res) => {
     try {
-      await storage.deleteProblem(req.params.id);
+      await storage.deleteProblem((req.params.id as string));
       res.status(204).send();
     } catch (error) {
       console.error("Error deleting problem:", error);
@@ -262,7 +277,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   // Reorder problems
-  app.post("/api/problems/reorder", async (req, res) => {
+  app.post("/api/problems/reorder", ...requireAdmin, async (req, res) => {
     try {
       const { orderedIds } = req.body;
       if (!Array.isArray(orderedIds)) {
@@ -281,9 +296,9 @@ export async function registerRoutes(app: Express): Promise<void> {
   // ============================================
 
   // Get blocks for a problem
-  app.get("/api/problems/:problemId/blocks", async (req, res) => {
+  app.get("/api/problems/:problemId/blocks", ...requireAdmin, async (req, res) => {
     try {
-      const blocks = await storage.getBlocks(req.params.problemId);
+      const blocks = await storage.getBlocks((req.params.problemId as string));
       res.json(blocks);
     } catch (error) {
       console.error("Error fetching blocks:", error);
@@ -292,7 +307,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   // Create a new block
-  app.post("/api/blocks", async (req, res) => {
+  app.post("/api/blocks", ...requireAdmin, async (req, res) => {
     try {
       const parsed = insertBlockSchema.safeParse(req.body);
       if (!parsed.success) {
@@ -307,9 +322,9 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   // Update a block
-  app.patch("/api/blocks/:id", async (req, res) => {
+  app.patch("/api/blocks/:id", ...requireAdmin, async (req, res) => {
     try {
-      const block = await storage.updateBlock(req.params.id, req.body);
+      const block = await storage.updateBlock((req.params.id as string), req.body);
       if (!block) {
         return res.status(404).json({ error: "ブロックが見つかりません" });
       }
@@ -321,9 +336,9 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   // Delete a block
-  app.delete("/api/blocks/:id", async (req, res) => {
+  app.delete("/api/blocks/:id", ...requireAdmin, async (req, res) => {
     try {
-      await storage.deleteBlock(req.params.id);
+      await storage.deleteBlock((req.params.id as string));
       res.status(204).send();
     } catch (error) {
       console.error("Error deleting block:", error);
@@ -332,7 +347,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   // Reorder blocks
-  app.post("/api/blocks/reorder", async (req, res) => {
+  app.post("/api/blocks/reorder", ...requireAdmin, async (req, res) => {
     try {
       const { orderedIds } = req.body;
       if (!Array.isArray(orderedIds)) {
@@ -350,7 +365,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   // AI Routes
   // ============================================
 
-  app.post("/api/ai/explain", async (req, res) => {
+  app.post("/api/ai/explain", ...requireAdmin, async (req, res) => {
     try {
       const { problem, code, imageUrl } = req.body;
 
@@ -390,7 +405,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     reviewCode: z.string().min(1, "レビュー対象のコードが必要です").max(200000, "レビュー対象のコードが長すぎます"),
   });
 
-  app.post("/api/ai/review", async (req, res) => {
+  app.post("/api/ai/review", ...requireAdmin, async (req, res) => {
     try {
       const parseResult = reviewSchema.safeParse(req.body);
       if (!parseResult.success) {
@@ -429,7 +444,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   // ============================================
 
   // Get all prompts
-  app.get("/api/prompts", async (req, res) => {
+  app.get("/api/prompts", ...requireAdmin, async (req, res) => {
     try {
       const promptList = await storage.getPrompts();
       res.json(promptList);
@@ -440,9 +455,9 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   // Get a single prompt
-  app.get("/api/prompts/:id", async (req, res) => {
+  app.get("/api/prompts/:id", ...requireAdmin, async (req, res) => {
     try {
-      const prompt = await storage.getPrompt(req.params.id);
+      const prompt = await storage.getPrompt((req.params.id as string));
       if (!prompt) {
         return res.status(404).json({ error: "プロンプトが見つかりません" });
       }
@@ -454,7 +469,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   // Create or update a prompt
-  app.put("/api/prompts/:id", async (req, res) => {
+  app.put("/api/prompts/:id", ...requireAdmin, async (req, res) => {
     try {
       const parseResult = insertPromptSchema.safeParse({
         ...req.body,
@@ -475,7 +490,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   // Self Review Links Routes
   // ============================================
 
-  app.post("/api/self-review-links", async (req, res) => {
+  app.post("/api/self-review-links", ...requireAdmin, async (req, res) => {
     try {
       const { problemId } = req.body;
       if (!problemId) {
@@ -496,9 +511,9 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
-  app.get("/api/self-review-links/problem/:problemId", async (req, res) => {
+  app.get("/api/self-review-links/problem/:problemId", ...requireLearner, async (req, res) => {
     try {
-      const link = await storage.getSelfReviewLinkByProblemId(req.params.problemId);
+      const link = await storage.getSelfReviewLinkByProblemId((req.params.problemId as string));
       if (!link) {
         return res.status(404).json({ error: "リンクが見つかりません" });
       }
@@ -639,7 +654,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   }
 
   // Returns the icon generation prompt text without calling the AI (for manual use elsewhere)
-  app.post("/api/ai/icon-prompt", (req, res) => {
+  app.post("/api/ai/icon-prompt", ...requireAdmin, (req, res) => {
     const parseResult = iconGenerationSchema.safeParse(req.body);
     if (!parseResult.success) {
       const errorMessage = parseResult.error.errors[0]?.message || "入力が無効です";
@@ -650,7 +665,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   // Regenerate all chapter icons (for remix/migration)
-  app.post("/api/ai/regenerate-all-icons", async (req, res) => {
+  app.post("/api/ai/regenerate-all-icons", ...requireAdmin, async (req, res) => {
     try {
       const chapters = await storage.getChapters();
       const results: { id: string; title: string; success: boolean; iconUrl?: string; error?: string }[] = [];
@@ -704,7 +719,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
-  app.post("/api/ai/generate-icon", async (req, res) => {
+  app.post("/api/ai/generate-icon", ...requireAdmin, async (req, res) => {
     try {
       const parseResult = iconGenerationSchema.safeParse(req.body);
       if (!parseResult.success) {
