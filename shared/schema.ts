@@ -56,6 +56,32 @@ export const selfReviewLinks = pgTable("self_review_links", {
 });
 
 // ============================================
+// Articles (読み物の記事。カリキュラムの流れとは別で、リンクで共有する)
+// ============================================
+
+// Article categories table — the thumbnail cards on 記事管理, laid out like chapters
+export const articleCategories = pgTable("article_categories", {
+  id: text("id").primaryKey(),
+  title: text("title").notNull(),
+  genre: text("genre").notNull().default(""),
+  icon: text("icon"),
+  colorIndex: integer("color_index").notNull().default(0),
+  order: integer("order").notNull().default(0),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Articles table — a single Markdown body each; any signed-in user can read one by its link
+export const articles = pgTable("articles", {
+  id: text("id").primaryKey(),
+  categoryId: text("category_id").notNull().references(() => articleCategories.id, { onDelete: "cascade" }),
+  title: text("title").notNull(),
+  markdown: text("markdown").notNull().default(""),
+  order: integer("order").notNull().default(0),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// ============================================
 // LMS: Users / Groups / Courses / Submissions / Certificates / Settings
 // ============================================
 
@@ -311,6 +337,17 @@ export const insertBlockSchema = createInsertSchema(blocks).omit({
   id: true 
 });
 
+export const insertArticleCategorySchema = createInsertSchema(articleCategories).omit({
+  id: true,
+  createdAt: true
+});
+
+export const insertArticleSchema = createInsertSchema(articles).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true
+});
+
 export const insertPromptSchema = createInsertSchema(prompts).omit({
   updatedAt: true
 });
@@ -491,6 +528,21 @@ export type AnyBlockContent =
 // API response types
 export interface ChapterWithCount extends Chapter {
   problemCount: number;
+}
+
+export type ArticleCategory = typeof articleCategories.$inferSelect;
+export type InsertArticleCategory = z.infer<typeof insertArticleCategorySchema>;
+
+export type Article = typeof articles.$inferSelect;
+export type InsertArticle = z.infer<typeof insertArticleSchema>;
+
+export interface ArticleCategoryWithCount extends ArticleCategory {
+  articleCount: number;
+}
+
+/** An article as a reader sees it: the body plus the category it sits under. */
+export interface ArticleWithCategory extends Article {
+  categoryTitle: string;
 }
 
 export interface ProblemWithStatus extends Problem {

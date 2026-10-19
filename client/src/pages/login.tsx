@@ -8,6 +8,15 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { useAuth } from "@/hooks/use-auth";
 import mascotGraduate from "@assets/mascot-graduate.png";
 
+// Where to go after signing in when the login was forced by opening a page
+// (e.g. a shared article link) while signed out. Only same-site paths are
+// accepted — never "//host" or a full URL — so the parameter can't be used to
+// bounce someone to another site.
+function readNextPath(): string | null {
+  const next = new URLSearchParams(window.location.search).get("next");
+  return next && next.startsWith("/") && !next.startsWith("//") ? next : null;
+}
+
 export default function LoginPage() {
   const { user, isLoading, login } = useAuth();
   const [, navigate] = useLocation();
@@ -18,7 +27,7 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (!isLoading && user) {
-      navigate(user.mustChangePassword ? "/change-password" : user.role === "admin" ? "/admin" : "/learn");
+      navigate(user.mustChangePassword ? "/change-password" : readNextPath() ?? (user.role === "admin" ? "/admin" : "/learn"));
     }
   }, [isLoading, user, navigate]);
 
@@ -28,7 +37,11 @@ export default function LoginPage() {
     setIsSubmitting(true);
     try {
       const loggedInUser = await login(email, password);
-      navigate(loggedInUser.mustChangePassword ? "/change-password" : loggedInUser.role === "admin" ? "/admin" : "/learn");
+      navigate(
+        loggedInUser.mustChangePassword
+          ? "/change-password"
+          : readNextPath() ?? (loggedInUser.role === "admin" ? "/admin" : "/learn")
+      );
     } catch (err) {
       // apiRequest throws `${status}: ${bodyText}` — only the disabled-account
       // case (403) needs its own message; everything else stays generic so

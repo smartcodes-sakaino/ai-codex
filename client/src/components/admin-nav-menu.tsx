@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
-import { Menu, LayoutDashboard, BookOpen, GraduationCap, Users, BarChart3, Sparkles, Award, LogOut, PlayCircle, Eye, KeyRound } from "lucide-react";
+import { Menu, LayoutDashboard, BookOpen, GraduationCap, Users, BarChart3, Sparkles, Award, LogOut, PlayCircle, Eye, KeyRound, Newspaper } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { useAuth } from "@/hooks/use-auth";
@@ -12,6 +12,7 @@ import mascotGraduate from "@assets/mascot-graduate.png";
 const NAV_ITEMS = [
   { href: "/admin", label: "ダッシュボード", icon: LayoutDashboard },
   { href: "/", label: "カリキュラム管理", icon: BookOpen },
+  { href: "/admin/articles", label: "記事管理", icon: Newspaper },
   { href: "/admin/courses", label: "コース管理", icon: GraduationCap },
   { href: "/admin/members", label: "メンバー管理", icon: Users },
   { href: "/admin/progress", label: "進捗確認", icon: BarChart3 },

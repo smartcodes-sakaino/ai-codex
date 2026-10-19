@@ -4,6 +4,7 @@ import { storage } from "./storage";
 import { insertChapterSchema, insertProblemSchema, insertBlockSchema, insertPromptSchema, submitSelfReviewSchema } from "@shared/schema";
 import { registerObjectStorageRoutes, ObjectStorageService } from "./replit_integrations/object_storage";
 import { registerLmsRoutes } from "./lms/routes";
+import { registerArticleRoutes } from "./lms/articles";
 import { lmsStorage } from "./lms/storage";
 import { runSelfReviewCheck, AiUnavailableError, processTemplate } from "./lms/aiCheck";
 import { checkAndIssueCertificatesForProblem } from "./lms/roadmap";
@@ -92,6 +93,9 @@ export async function registerRoutes(app: Express): Promise<void> {
 
   // Register LMS routes (auth, admin, learner)
   registerLmsRoutes(app);
+
+  // Register article routes (読み物の記事: admin management + signed-in reading)
+  registerArticleRoutes(app);
 
   // ============================================
   // Chapter Routes

@@ -17,7 +17,10 @@ export function RequireRole({ role, children }: RequireRoleProps) {
   useEffect(() => {
     if (isLoading) return;
     if (!user) {
-      navigate("/login");
+      // Remember the page so login can come back to it — matters most for
+      // shared links (e.g. an article) opened while signed out.
+      const here = window.location.pathname + window.location.search;
+      navigate(here === "/" ? "/login" : `/login?next=${encodeURIComponent(here)}`);
     } else if (user.mustChangePassword) {
       navigate("/change-password");
     } else if (!isAllowed) {
