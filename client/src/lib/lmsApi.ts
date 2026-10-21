@@ -360,6 +360,15 @@ export function certificatePdfUrl(certificateId: string): string {
   return `/api/my/certificates/${certificateId}/pdf`;
 }
 
+export async function fetchSelfManualPdf(courseId: string, problemId: string): Promise<Blob> {
+  const res = await fetch(`/api/my/courses/${courseId}/problems/${problemId}/manual.pdf`, { credentials: "include" });
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(body?.error || "取扱説明書の作成に失敗しました");
+  }
+  return res.blob();
+}
+
 // ============================================
 // Learner: Video progress
 // ============================================

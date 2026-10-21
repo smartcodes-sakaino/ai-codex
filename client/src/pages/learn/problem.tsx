@@ -7,7 +7,7 @@ import { LearnerLayout } from "@/components/learner-layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { Loader2, FileArchive, ClipboardCheck } from "lucide-react";
+import { Loader2, FileArchive, ClipboardCheck, FileDown } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient } from "@/lib/queryClient";
 import { fetchProblemWithBlocks, getSelfReviewLinkByProblemId } from "@/lib/api";
@@ -17,8 +17,10 @@ import {
   fetchVideoProgress,
   saveVideoProgress,
   submitAnswer,
+  fetchSelfManualPdf,
   type Submission,
 } from "@/lib/lmsApi";
+import { SELF_MANUAL_PROBLEM_ID } from "@shared/selfManual";
 import { VideoPlayer } from "@/components/video-player";
 import { CodeSubmissionInput } from "@/components/code-submission-input";
 import { AiQuestionWidget } from "@/components/ai-question-widget";
@@ -107,6 +109,26 @@ export default function LearnerProblemPage() {
       toast({ title: "採点中にエラーが発生しました。もう一度お試しください", variant: "destructive" });
     },
   });
+
+  // The AI summarizing step takes several seconds, so download via fetch (with
+  // a spinner) rather than a plain link that would look unresponsive.
+  const selfManualMutation = useMutation({
+    mutationFn: () => fetchSelfManualPdf(courseId, problemId),
+    onSuccess: (blob) => {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "自分の取扱説明書.pdf";
+      a.click();
+      URL.revokeObjectURL(url);
+    },
+    onError: (err: Error) => {
+      toast({ title: err.message, variant: "destructive" });
+    },
+  });
+  const canDownloadSelfManual =
+    problemId === SELF_MANUAL_PROBLEM_ID &&
+    (lastResult?.verdict === "pass" || submissions.some((s) => s.verdict === "pass"));
 
   const lessonBlocks = problem?.blocks.filter((b) => b.type === "lesson") ?? [];
   const fileBlocks = problem?.blocks.filter((b) => b.type === "file") ?? [];
@@ -232,6 +254,22 @@ export default function LearnerProblemPage() {
                 <FeedbackSection title="改善点" text={lastResult.aiImprove} />
                 <FeedbackSection title="修正が必要な点" text={lastResult.aiMustFix} />
               </>
+            )}
+
+            {canDownloadSelfManual && (
+              <div className="rounded-md border border-[#F2C9A8] bg-[#FFF4EC] px-4 py-3 mb-4">
+                <p className="text-sm mb-2">合格した回答から、取扱説明書を1枚のPDFにまとめられます。</p>
+                <Button
+                  variant="outline"
+                  className="gap-2"
+                  onClick={() => selfManualMutation.mutate()}
+                  disabled={selfManualMutation.isPending}
+                  data-testid="button-download-self-manual"
+                >
+                  {selfManualMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}
+                  {selfManualMutation.isPending ? "まとめています..." : "取扱説明書をPDFで受け取る"}
+                </Button>
+              </div>
             )}
 
             {/* Outside the lastResult branch on purpose: a video- or

@@ -17,6 +17,8 @@ import { hashPassword, verifyPassword, generateTempPassword, requireAuth, requir
 import { getRoadmap, getAdminViewRoadmap, getCourseProgress, assertProblemIsCurrent, checkAndIssueCertificatesForProblem } from "./roadmap";
 import { runLmsCheck, runAiQuestion, AiUnavailableError, type LmsCheckResult } from "./aiCheck";
 import { objectStorageService } from "./certificate";
+import { extractSelfManual, renderSelfManualPdf } from "./selfManual";
+import { SELF_MANUAL_PROBLEM_ID } from "@shared/selfManual";
 import { exportCourseProgress } from "./export";
 import { storage } from "../storage";
 import { getStagnation, countStagnantLearners, runStagnationCheck } from "./stagnation";
@@ -609,4 +611,37 @@ export function registerLmsRoutes(app: Express): void {
     const fileId = await objectStorageService.getObjectEntityFile(cert.pdfObjectPath);
     await objectStorageService.downloadObject(fileId, req, res);
   });
+
+  // One-page PDF of the learner's 取扱説明書, built on demand from their latest
+  // passing answer (not stored, so the AI's wording can vary between downloads).
+  app.get<{ id: string; problemId: string }>(
+    "/api/my/courses/:id/problems/:problemId/manual.pdf",
+    ...requireLearner,
+    async (req: AuthedRequest, res: Response) => {
+      const { id: courseId, problemId } = req.params as { id: string; problemId: string };
+      if (problemId !== SELF_MANUAL_PROBLEM_ID) {
+        return res.status(404).json({ error: "この課題では取扱説明書を作れません" });
+      }
+      const passed = (await lmsStorage.getSubmissionsFor(req.user!.id, courseId, problemId))
+        .filter((s) => s.verdict === "pass")
+        .sort((a, b) => new Date(a.submittedAt).getTime() - new Date(b.submittedAt).getTime());
+      const latest = passed[passed.length - 1];
+      if (!latest) {
+        return res.status(404).json({ error: "合格した回答が見つかりません" });
+      }
+
+      try {
+        const content = await extractSelfManual(latest.code);
+        const pdf = await renderSelfManualPdf({ learnerName: req.user!.name, content, createdAt: new Date() });
+        res.setHeader("Content-Type", "application/pdf");
+        res.setHeader("Content-Disposition", `attachment; filename*=UTF-8''${encodeURIComponent("自分の取扱説明書.pdf")}`);
+        res.send(pdf);
+      } catch (error) {
+        if (error instanceof AiUnavailableError) {
+          return res.status(502).json({ error: error.message });
+        }
+        throw error;
+      }
+    }
+  );
 }

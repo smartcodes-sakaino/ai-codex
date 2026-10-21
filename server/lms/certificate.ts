@@ -30,6 +30,11 @@ export function setFontLoader(loader: FontLoader): void {
   fontLoader = loader;
 }
 
+/** Shared with other server-generated PDFs (e.g. selfManual.ts) so they pick up the same loader swap. */
+export function loadPdfFonts(): Promise<FontBuffers> {
+  return fontLoader();
+}
+
 function generateCertificateNumber(courseId: string): string {
   const datePart = new Date().toISOString().slice(0, 10).replace(/-/g, "");
   const randomPart = randomUUID().replace(/-/g, "").slice(0, 6).toUpperCase();
