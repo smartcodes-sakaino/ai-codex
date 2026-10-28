@@ -360,13 +360,19 @@ export function certificatePdfUrl(certificateId: string): string {
   return `/api/my/certificates/${certificateId}/pdf`;
 }
 
-export async function fetchSelfManualPdf(courseId: string, problemId: string): Promise<Blob> {
-  const res = await fetch(`/api/my/courses/${courseId}/problems/${problemId}/manual.pdf`, { credentials: "include" });
+export interface SelfManualSheetData {
+  name: string;
+  typeCode: string;
+  fields: Record<string, string>;
+}
+
+export async function fetchSelfManualSheet(courseId: string, problemId: string): Promise<SelfManualSheetData> {
+  const res = await fetch(`/api/my/courses/${courseId}/problems/${problemId}/manual-sheet`, { credentials: "include" });
   if (!res.ok) {
     const body = await res.json().catch(() => null);
     throw new Error(body?.error || "取扱説明書の作成に失敗しました");
   }
-  return res.blob();
+  return res.json();
 }
 
 // ============================================

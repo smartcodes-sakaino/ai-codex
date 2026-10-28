@@ -17,10 +17,11 @@ import {
   fetchVideoProgress,
   saveVideoProgress,
   submitAnswer,
-  fetchSelfManualPdf,
+  fetchSelfManualSheet,
   type Submission,
 } from "@/lib/lmsApi";
 import { SELF_MANUAL_PROBLEM_ID } from "@shared/selfManual";
+import { renderSelfManualSheet } from "@/lib/selfManualSheet";
 import { VideoPlayer } from "@/components/video-player";
 import { CodeSubmissionInput } from "@/components/code-submission-input";
 import { AiQuestionWidget } from "@/components/ai-question-widget";
@@ -110,18 +111,15 @@ export default function LearnerProblemPage() {
     },
   });
 
-  // The AI summarizing step takes several seconds, so download via fetch (with
-  // a spinner) rather than a plain link that would look unresponsive.
+  // The AI summarizing step takes several seconds, so show a spinner, then a
+  // preview of the image with a link to save it.
+  const [selfManualUrl, setSelfManualUrl] = useState<string | null>(null);
+  useEffect(() => () => {
+    if (selfManualUrl) URL.revokeObjectURL(selfManualUrl);
+  }, [selfManualUrl]);
   const selfManualMutation = useMutation({
-    mutationFn: () => fetchSelfManualPdf(courseId, problemId),
-    onSuccess: (blob) => {
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "自分の取扱説明書.pdf";
-      a.click();
-      URL.revokeObjectURL(url);
-    },
+    mutationFn: async () => renderSelfManualSheet(await fetchSelfManualSheet(courseId, problemId)),
+    onSuccess: (blob) => setSelfManualUrl(URL.createObjectURL(blob)),
     onError: (err: Error) => {
       toast({ title: err.message, variant: "destructive" });
     },
@@ -258,17 +256,28 @@ export default function LearnerProblemPage() {
 
             {canDownloadSelfManual && (
               <div className="rounded-md border border-[#F2C9A8] bg-[#FFF4EC] px-4 py-3 mb-4">
-                <p className="text-sm mb-2">合格した回答から、取扱説明書を1枚のPDFにまとめられます。</p>
+                <p className="text-sm mb-2">合格した回答から、周りの人に渡せる取扱説明書の画像を作れます。</p>
                 <Button
                   variant="outline"
                   className="gap-2"
                   onClick={() => selfManualMutation.mutate()}
                   disabled={selfManualMutation.isPending}
-                  data-testid="button-download-self-manual"
+                  data-testid="button-create-self-manual"
                 >
                   {selfManualMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}
-                  {selfManualMutation.isPending ? "まとめています..." : "取扱説明書をPDFで受け取る"}
+                  {selfManualMutation.isPending ? "まとめています..." : selfManualUrl ? "もう一度作る" : "取扱説明書の画像を作る"}
                 </Button>
+                {selfManualUrl && (
+                  <div className="mt-3">
+                    <img src={selfManualUrl} alt="自分の取扱説明書" className="w-full max-w-sm rounded border" data-testid="img-self-manual" />
+                    <a href={selfManualUrl} download="自分の取扱説明書.png" className="inline-block mt-2" data-testid="link-save-self-manual">
+                      <Button size="sm" className="gap-2 bg-gradient-to-r from-[#FF8C42] to-[#FFA566] text-white">
+                        <FileDown className="h-4 w-4" />
+                        画像を保存する
+                      </Button>
+                    </a>
+                  </div>
+                )}
               </div>
             )}
 

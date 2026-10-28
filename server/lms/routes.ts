@@ -17,7 +17,7 @@ import { hashPassword, verifyPassword, generateTempPassword, requireAuth, requir
 import { getRoadmap, getAdminViewRoadmap, getCourseProgress, assertProblemIsCurrent, checkAndIssueCertificatesForProblem } from "./roadmap";
 import { runLmsCheck, runAiQuestion, AiUnavailableError, type LmsCheckResult } from "./aiCheck";
 import { objectStorageService } from "./certificate";
-import { extractSelfManual, renderSelfManualPdf } from "./selfManual";
+import { extractSelfManualSheet } from "./selfManual";
 import { SELF_MANUAL_PROBLEM_ID } from "@shared/selfManual";
 import { exportCourseProgress } from "./export";
 import { storage } from "../storage";
@@ -612,10 +612,11 @@ export function registerLmsRoutes(app: Express): void {
     await objectStorageService.downloadObject(fileId, req, res);
   });
 
-  // One-page PDF of the learner's 取扱説明書, built on demand from their latest
-  // passing answer (not stored, so the AI's wording can vary between downloads).
+  // The fields of the learner's 取扱説明書 image, sorted out on demand from their
+  // latest passing answer (not stored, so the AI's wording can vary between requests).
+  // The browser pours them into the template image and saves it as a PNG.
   app.get<{ id: string; problemId: string }>(
-    "/api/my/courses/:id/problems/:problemId/manual.pdf",
+    "/api/my/courses/:id/problems/:problemId/manual-sheet",
     ...requireLearner,
     async (req: AuthedRequest, res: Response) => {
       const { id: courseId, problemId } = req.params as { id: string; problemId: string };
@@ -631,11 +632,8 @@ export function registerLmsRoutes(app: Express): void {
       }
 
       try {
-        const content = await extractSelfManual(latest.code);
-        const pdf = await renderSelfManualPdf({ learnerName: req.user!.name, content, createdAt: new Date() });
-        res.setHeader("Content-Type", "application/pdf");
-        res.setHeader("Content-Disposition", `attachment; filename*=UTF-8''${encodeURIComponent("自分の取扱説明書.pdf")}`);
-        res.send(pdf);
+        const sheet = await extractSelfManualSheet(latest.code);
+        res.json({ name: req.user!.name, ...sheet });
       } catch (error) {
         if (error instanceof AiUnavailableError) {
           return res.status(502).json({ error: error.message });
