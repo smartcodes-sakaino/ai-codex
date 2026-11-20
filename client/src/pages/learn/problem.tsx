@@ -20,7 +20,7 @@ import {
   fetchSelfManualSheet,
   type Submission,
 } from "@/lib/lmsApi";
-import { SELF_MANUAL_PROBLEM_ID } from "@shared/selfManual";
+import { selfManualVariant } from "@shared/selfManual";
 import { renderSelfManualSheet } from "@/lib/selfManualSheet";
 import { VideoPlayer } from "@/components/video-player";
 import { CodeSubmissionInput } from "@/components/code-submission-input";
@@ -125,7 +125,7 @@ export default function LearnerProblemPage() {
     },
   });
   const canDownloadSelfManual =
-    problemId === SELF_MANUAL_PROBLEM_ID &&
+    selfManualVariant(problemId) !== undefined &&
     (lastResult?.verdict === "pass" || submissions.some((s) => s.verdict === "pass"));
 
   const lessonBlocks = problem?.blocks.filter((b) => b.type === "lesson") ?? [];

@@ -18,7 +18,7 @@ import { getRoadmap, getAdminViewRoadmap, getCourseProgress, assertProblemIsCurr
 import { runLmsCheck, runAiQuestion, AiUnavailableError, type LmsCheckResult } from "./aiCheck";
 import { objectStorageService } from "./certificate";
 import { extractSelfManualSheet } from "./selfManual";
-import { SELF_MANUAL_PROBLEM_ID } from "@shared/selfManual";
+import { selfManualVariant } from "@shared/selfManual";
 import { exportCourseProgress } from "./export";
 import { storage } from "../storage";
 import { getStagnation, countStagnantLearners, runStagnationCheck } from "./stagnation";
@@ -620,7 +620,8 @@ export function registerLmsRoutes(app: Express): void {
     ...requireLearner,
     async (req: AuthedRequest, res: Response) => {
       const { id: courseId, problemId } = req.params as { id: string; problemId: string };
-      if (problemId !== SELF_MANUAL_PROBLEM_ID) {
+      const variant = selfManualVariant(problemId);
+      if (!variant) {
         return res.status(404).json({ error: "この課題では取扱説明書を作れません" });
       }
       const passed = (await lmsStorage.getSubmissionsFor(req.user!.id, courseId, problemId))
@@ -632,7 +633,7 @@ export function registerLmsRoutes(app: Express): void {
       }
 
       try {
-        const sheet = await extractSelfManualSheet(latest.code);
+        const sheet = await extractSelfManualSheet(latest.code, variant);
         res.json({ name: req.user!.name, ...sheet });
       } catch (error) {
         if (error instanceof AiUnavailableError) {

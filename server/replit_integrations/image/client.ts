@@ -1,8 +1,7 @@
-import { GoogleGenAI, Modality } from "@google/genai";
+import { Modality } from "@google/genai";
+import { createGeminiClient } from "../../geminiClient";
 
-export const ai = new GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY,
-});
+export const ai = createGeminiClient();
 
 /**
  * Generate an image and return as base64 data URL.

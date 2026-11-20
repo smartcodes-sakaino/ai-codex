@@ -1,7 +1,7 @@
-import { GoogleGenAI } from "@google/genai";
 import { storage } from "../storage";
+import { createGeminiClient, GEMINI_TEXT_MODEL } from "../geminiClient";
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+const ai = createGeminiClient();
 
 const LMS_CHECK_PROMPT_ID = "lms_check";
 
@@ -66,7 +66,7 @@ export async function runLmsCheck(problemTitle: string, problemDescription: stri
   let text: string | undefined;
   try {
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: GEMINI_TEXT_MODEL,
       contents: [{ role: "user", parts: [{ text: prompt }] }],
       config: {
         responseMimeType: "application/json",
@@ -188,7 +188,7 @@ export async function runSelfReviewCheck(
   let text: string | undefined;
   try {
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: GEMINI_TEXT_MODEL,
       contents: [{ role: "user", parts: [{ text: prompt }] }],
       config: {
         responseMimeType: "application/json",
@@ -274,7 +274,7 @@ export async function runAiQuestion(
 
   try {
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: GEMINI_TEXT_MODEL,
       contents: [{ role: "user", parts: [{ text: prompt }] }],
     });
     return response.text || "回答を生成できませんでした。もう一度お試しください。";

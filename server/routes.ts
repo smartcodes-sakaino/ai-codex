@@ -1,5 +1,6 @@
 import type { Express, Request, Response } from "express";
-import { GoogleGenAI, Modality } from "@google/genai";
+import { Modality } from "@google/genai";
+import { createGeminiClient, GEMINI_TEXT_MODEL } from "./geminiClient";
 import { storage } from "./storage";
 import { insertChapterSchema, insertProblemSchema, insertBlockSchema, insertPromptSchema, submitSelfReviewSchema } from "@shared/schema";
 import { registerObjectStorageRoutes, ObjectStorageService } from "./replit_integrations/object_storage";
@@ -12,9 +13,7 @@ import { requireAuth, requireRole, type AuthedRequest } from "./lms/auth";
 import { z } from "zod";
 import { randomUUID } from "crypto";
 
-const ai = new GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY,
-});
+const ai = createGeminiClient();
 
 const imageAi = ai;
 
@@ -384,7 +383,7 @@ export async function registerRoutes(app: Express): Promise<void> {
       });
 
       const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
+        model: GEMINI_TEXT_MODEL,
         contents: [{ role: "user", parts: [{ text: prompt }] }],
       });
 
@@ -426,7 +425,7 @@ export async function registerRoutes(app: Express): Promise<void> {
       });
 
       const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
+        model: GEMINI_TEXT_MODEL,
         contents: [{ role: "user", parts: [{ text: prompt }] }],
       });
 
