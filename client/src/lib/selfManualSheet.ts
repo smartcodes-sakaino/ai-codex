@@ -182,7 +182,35 @@ export async function renderSelfManualSheet(data: SelfManualSheetData): Promise<
   for (const [key, box] of Object.entries(BOXES)) {
     const text = (values[key] || "").trim();
     if (!text) continue;
-    if (SINGLE_LINE.has(key)) {
+    if (key === "functions" && text.includes("\n")) {
+      // 心理機能 comes as two lines: the function stack, then a smaller one-line summary.
+      // Either stack + one summary to wrap, or stack + two summary lines broken by hand.
+      const [stack, ...rest] = text.split("\n");
+      const summary = rest.join("");
+      // The frame is a little wider and taller than the box drawn for one line; use it.
+      const wide = { ...box, x: box.x - 14, w: box.w + 20 };
+      drawSingleLine(ctx, stack, { ...wide, y: box.y - 18, h: 40 }, 32, INK);
+      // The summary wraps to two lines under the stack, filling the frame's lower part.
+      // Hand-broken lines (up to 21 characters) all start at the same size, so every type looks alike.
+      let size = rest.length > 1 ? 26 : 32;
+      let lines: string[] = [];
+      for (; size > MIN_SIZE; size--) {
+        setFont(ctx, size);
+        if (rest.length > 1) {
+          lines = rest;
+          if (Math.max(...lines.map((l) => ctx.measureText(l).width)) <= wide.w - size / 2) break;
+        } else {
+          lines = wrap(ctx, summary, wide.w + size / 2, size);
+          if (lines.length <= 2) break;
+        }
+      }
+      const lineHeight = size * 1.3;
+      const blockWidth = Math.max(...lines.map((l) => ctx.measureText(l).width));
+      const x = wide.x + (wide.w - blockWidth) / 2;
+      const firstCenter = box.y + 52 + lineHeight / 2;
+      ctx.fillStyle = ACCENT;
+      lines.forEach((l, i) => ctx.fillText(l, x, firstCenter + lineHeight * i));
+    } else if (SINGLE_LINE.has(key)) {
       drawSingleLine(ctx, text, box, MAX_SIZE[key], key === "typeCode" ? ACCENT : INK);
     } else {
       drawWrapped(ctx, text, box, MAX_SIZE[key]);

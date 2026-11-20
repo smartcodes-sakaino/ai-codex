@@ -25,7 +25,8 @@ export const SHEET_FIELDS: { key: string; label: string; maxChars: number; sourc
     label: "心理機能",
     maxChars: 24,
     source: {
-      full: "④ 心理機能。「Si → Te → Fi → Ne」のように、主機能から劣等機能まで、英字2文字を「 → 」でつなぐ",
+      // Both variants: built from the type code (functionsForType), not asked of the model.
+      full: null,
       light: null,
     },
   },
@@ -72,9 +73,44 @@ const FUNCTION_ORDER: Record<string, string[]> = {
   ESTJ: ["Te", "Si", "Ne", "Fi"], ESFJ: ["Fe", "Si", "Ne", "Ti"], ENFJ: ["Fe", "Ni", "Se", "Ti"], ENTJ: ["Te", "Ni", "Se", "Fi"],
 };
 
+// Plain-word names for the functions, from the in-house MBTI site's 主要スタック.
+const FUNCTION_LABEL: Record<string, string> = {
+  Ni: "直観", Te: "効率", Fi: "感情", Se: "現実", Si: "こだわり", Ne: "想像力", Ti: "論理", Fe: "共感",
+};
+
+// Two-line description per type: how all four functions work together (the third
+// often supplies the motive, the weakest the blind spot), worded after the same
+// site's 主要スタック notes.
+const TYPE_SUMMARY: Record<string, string> = {
+  // The line break is fixed by hand ("\n") so no word is split and every type gets
+  // the same text size; keep each line within 21 characters (INTJ's runs a little
+  // longer by request, so its text comes out slightly smaller).
+  INTJ: "何がしたいか、どうすれば効率がいいかが分かる。\n先のことをよく考え、行動する前に成功している。",
+  INFJ: "人の願いを察し、理想に向かって先を見通す。\n正義感が強く、問題も筋道立てて見抜く。",
+  ENTP: "興味関心で動き、何事もすぐに習得できる。\n相手の考えも読めるが、飽きっぽい。",
+  ENFP: "心が動くことへ次々と興味を広げ、\nやりたいことは段取りも組む。集中は苦手。",
+  ISTJ: "経験と秩序を土台に、客観的に判断する。\n道徳を大事にするが、新しいことは苦手。",
+  ISFJ: "人のためにと決めたことを貫き通す。\n間違いには気づくが、応用は苦手。結構頑固。",
+  ESTP: "「今」に飛び込み、素早く合理的に動く。\n周りと楽しむが、先の計画は後回し。",
+  ESFP: "「今」を楽しみ、自分らしく生きる。\n先のことを考えるより、結果で魅せる。",
+  INTP: "可能性と経験を踏まえ、理屈で世界をつかむ。\n「人」より「意見」に寄り添う。",
+  ISTP: "成功体験を積み、理屈と直感で再現性を学ぶ。\n人とは程よい距離を保つ。",
+  ENTJ: "先を読んで、具体的な指示と戦略を立てる。\n無駄なく進め、気持ちより結果を優先する。",
+  ESTJ: "上を目指して、正しい努力ができる。\nストイックな自分に周りを巻き込みがち。",
+  INFP: "心の世界を想像で広げ、理想を真剣に目指す。\n効率より大切なものがあると考える。",
+  ISFP: "感受性が高く、見て感じたことやひらめきを、\n自分らしく表現する。効率より気持ちが大事。",
+  ENFJ: "人に寄り添い、誰にでも手を差し伸べる。\n自分のことは後回しにしがち。",
+  ESFJ: "フッ軽で人が好き。細かな気配りができる。\n理屈より、まず気持ちに寄り添って行動する。",
+};
+
+// Two lines for the 心理機能 box: the main function in the middle with the second
+// and third feeding into it, the weakest one marked with △; then the summary.
 export function functionsForType(typeCode: string): string {
-  const order = FUNCTION_ORDER[typeCode.trim().toUpperCase()];
-  return order ? order.join(" → ") : "";
+  const code = typeCode.trim().toUpperCase();
+  const order = FUNCTION_ORDER[code];
+  if (!order) return "";
+  const [main, second, third, weakest] = order.map((f) => FUNCTION_LABEL[f]);
+  return `(${second} → ${main} ← ${third})  △ ${weakest}\n${TYPE_SUMMARY[code]}`;
 }
 
 export interface SelfManualSheet {
@@ -155,7 +191,7 @@ export async function extractSelfManualSheet(answer: string, variant: SelfManual
   const fields: Record<string, string> = Object.fromEntries(
     SHEET_FIELDS.map((f) => [f.key, String(parsed[f.key] || "").replace(/\s*\n\s*/g, "").trim()])
   );
-  if (variant === "light") fields.functions = functionsForType(typeCode);
+  fields.functions = functionsForType(typeCode);
   // The box is narrow; the model sometimes keeps the 「タイプ」 suffix it was told to drop.
   fields.cognitive = fields.cognitive.replace(/タイプ/g, "");
 
