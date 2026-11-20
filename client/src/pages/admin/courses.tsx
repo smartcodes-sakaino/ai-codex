@@ -113,7 +113,10 @@ export default function AdminCoursesPage() {
     });
   };
 
-  const targetOptions: (LmsUser | LmsGroup)[] = assignType === "group" ? groups : users;
+  // Disabled users can't be picked as new targets; ones already assigned still
+  // show by name in the list below (describeTarget looks them up in all users).
+  const targetOptions: (LmsUser | LmsGroup)[] =
+    assignType === "group" ? groups : users.filter((u) => u.isActive);
   const describeTarget = (t: AssignTarget) => {
     const found =
       t.type === "group" ? groups.find((g) => g.id === t.id) : users.find((u) => u.id === t.id);
