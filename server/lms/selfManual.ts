@@ -127,6 +127,8 @@ async function generateJson(prompt: string, properties: Record<string, unknown>)
       config: {
         responseMimeType: "application/json",
         responseSchema: { type: "object", properties, required: Object.keys(properties) },
+        // Low temperature: at the default the wording swung between runs (dropped 読点, 「書けぬ」).
+        temperature: 0.3,
       },
     });
     text = response.text;
@@ -150,11 +152,12 @@ const SHEET_PROMPT = `#命令書:
 - {{scope}}
 - 研修生本人の言葉で、回答に書かれた内容だけを使ってください。回答にない理由・効果（「確実に残ります」「すぐに動けます」など）や言葉を足さないでください
 - 「私は」で書き始めないでください。説明的な言い方（「〜と自覚しています」など）は避け、どの欄も自然な文で終えてください
-- 各欄は、指定の字数の8〜10割の長さで書き、字数をこえないでください。入りきらないときは、受け取る人にとって大事な点から順に残してください
+- 各欄は、指定の字数の8〜10割の長さで書き、字数をこえないでください。字数に読点「、」は数えません。入りきらないときは、受け取る人にとって大事な点から順に残してください
 - 残した内容の数字・条件・程度は、回答のとおりにしてください。条件の言い回しも変えないでください（「なくなった」を「減った」にしない、など）
 - 「・」や番号、改行は使わないでください。工程や項目の区切りは句点「。」で区切ってください。1つの工程・項目は1文にし、出来事と数字を別の文に分けないでください
-- 体言止めを続けたり、電報のように助詞を削ったりせず、話し言葉に近い文にしてください。回答にない略語（「NW」など）を作らないでください
+- 体言止めを続けたり、電報のように助詞を削ったりせず、話し言葉に近い文にしてください。読点「、」も削らず、文の切れ目には読点を打ってください（「同じ所違う所を」ではなく「同じ所と違う所を」、「決め遅れを」ではなく「決め、遅れを」）。回答にない略語（「NW」など）を作らないでください
 - 数字は回答のとおり算用数字で書いてください（「30分」を「三十分」にしない）。回答の「」はそのまま残してかまいません
+- 回答の小見出し（「受け取る」「処理する」などの工程名や、項目の見出し）は書かず、中身だけを書いてください
 - 回答に書かれていない欄は空文字にしてください
 - typeCode は、回答の②に書かれたタイプ（英字4文字）。書かれていなければ空文字
 
@@ -167,15 +170,21 @@ const SHEET_PROMPT = `#命令書:
 \`\`\``;
 
 const SHORTEN_PROMPT = `#命令書:
-次の各欄が字数をこえています。それぞれ指定の字数以内に縮めてください。
+次の各欄が字数をこえています。それぞれ指定の字数以内に縮めてください。字数に読点「、」は数えません。
 
 #制約条件
 - 大事な点に絞ってかまいませんが、残した内容の数字・条件・程度は変えないでください。書かれていないことを足さないでください
-- 縮めるときは、項目の数を減らしてください。体言止めや助詞を削った電報のような言い方、略語にはしないでください
+- 縮めるときは、項目の数を減らしてください。体言止めや助詞・読点を削った電報のような言い方、略語にはしないでください
 - 「・」や番号、改行は使わないでください。項目の区切りは句点「。」で区切ってください
 
 #各欄（キー：字数／今の文）
 {{fields}}`;
+
+// 読点 are left out of the budget: counting them pushed the model to drop them
+// (and even digits) to fit, which made the text read like a telegram.
+function charCount(text: string): number {
+  return text.replace(/[、，]/g, "").length;
+}
 
 export async function extractSelfManualSheet(answer: string, variant: SelfManualVariant): Promise<SelfManualSheet> {
   const asked = SHEET_FIELDS.filter((f) => f.source[variant] !== null);
@@ -194,9 +203,13 @@ export async function extractSelfManualSheet(answer: string, variant: SelfManual
   fields.functions = functionsForType(typeCode);
   // The box is narrow; the model sometimes keeps the 「タイプ」 suffix it was told to drop.
   fields.cognitive = fields.cognitive.replace(/タイプ/g, "");
+  for (const f of asked) {
+    // Sentence fields must end like a sentence even when the model leaves the last 。 off.
+    if (f.maxChars >= 100 && fields[f.key] && !/[。！？」]$/.test(fields[f.key])) fields[f.key] += "。";
+  }
 
   // The model often overshoots the budget; give over-budget fields one more pass.
-  const tooLong = asked.filter((f) => fields[f.key].length > f.maxChars);
+  const tooLong = asked.filter((f) => charCount(fields[f.key]) > f.maxChars);
   if (tooLong.length > 0) {
     const shortened = await generateJson(
       SHORTEN_PROMPT.replace("{{fields}}", tooLong.map((f) => `- ${f.key}：${f.maxChars}字以内／${fields[f.key]}`).join("\n")),
@@ -204,7 +217,7 @@ export async function extractSelfManualSheet(answer: string, variant: SelfManual
     );
     for (const f of tooLong) {
       const text = String(shortened[f.key] || "").trim();
-      if (text && text.length < fields[f.key].length) fields[f.key] = text;
+      if (text && charCount(text) < charCount(fields[f.key])) fields[f.key] = text;
     }
   }
 
