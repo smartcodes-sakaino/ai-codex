@@ -24,6 +24,13 @@ import { storage } from "../storage";
 import { getStagnation, countStagnantLearners, runStagnationCheck } from "./stagnation";
 import { timingSafeEqual } from "crypto";
 
+// The password hash never leaves the server. tempPassword stays: the admin
+// member list shows it on purpose so the admin can hand it to a new member.
+function withoutPasswordHash<T extends { passwordHash?: unknown }>(user: T): Omit<T, "passwordHash"> {
+  const { passwordHash: _hash, ...rest } = user;
+  return rest;
+}
+
 export function registerLmsRoutes(app: Express): void {
   const requireAdmin = [requireAuth, requireRole("admin")] as const;
   // Admins can also take courses (e.g. to preview content as a learner would
@@ -101,7 +108,7 @@ export function registerLmsRoutes(app: Express): void {
   // ============================================
 
   app.get("/api/admin/users", ...requireAdmin, async (_req, res) => {
-    res.json(await lmsStorage.getUsers());
+    res.json((await lmsStorage.getUsers()).map(withoutPasswordHash));
   });
 
   app.post("/api/admin/users", ...requireAdmin, async (req: Request, res: Response) => {
@@ -123,7 +130,7 @@ export function registerLmsRoutes(app: Express): void {
       tempPassword,
       groupIds: parsed.data.groupIds,
     });
-    res.status(201).json({ ...user, groupIds: parsed.data.groupIds });
+    res.status(201).json(withoutPasswordHash({ ...user, groupIds: parsed.data.groupIds }));
   });
 
   app.post<{ id: string }>("/api/admin/users/:id/regenerate-password", ...requireAdmin, async (req: Request, res: Response) => {
@@ -133,7 +140,7 @@ export function registerLmsRoutes(app: Express): void {
     if (!updated) {
       return res.status(404).json({ error: "ユーザーが見つかりません" });
     }
-    res.json(updated);
+    res.json(withoutPasswordHash(updated));
   });
 
   app.patch<{ id: string }>("/api/admin/users/:id", ...requireAdmin, async (req: AuthedRequest, res: Response) => {
@@ -179,7 +186,7 @@ export function registerLmsRoutes(app: Express): void {
     if (!updated) {
       return res.status(404).json({ error: "ユーザーが見つかりません" });
     }
-    res.json(updated);
+    res.json(withoutPasswordHash(updated));
   });
 
   // Permanent deletion — distinct from PATCH isActive:false, which is

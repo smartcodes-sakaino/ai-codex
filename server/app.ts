@@ -82,8 +82,11 @@ export async function createApp() {
       const duration = Date.now() - start;
       if (path.startsWith("/api")) {
         let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
-        if (capturedJsonResponse) {
-          logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
+        // Response bodies are not logged: they can hold user records, temp
+        // passwords and learners' answers. Only an error's message is kept.
+        const errorMessage = (capturedJsonResponse as { error?: unknown } | undefined)?.error;
+        if (res.statusCode >= 400 && typeof errorMessage === "string") {
+          logLine += ` :: ${errorMessage.slice(0, 200)}`;
         }
 
         log(logLine);
