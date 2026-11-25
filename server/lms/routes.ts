@@ -458,7 +458,15 @@ export function registerLmsRoutes(app: Express): void {
 
       let result: LmsCheckResult;
       if (expectedAnswer) {
-        const matched = parsed.data.code.trim() === expectedAnswer.trim();
+        // The submission input prefixes each block with a "// ===== <lang> ====="
+        // header line (combineEntries), so strip those before comparing —
+        // otherwise even a correct answer never matches.
+        const submitted = parsed.data.code
+          .split(/\r?\n/)
+          .filter((line) => !/^\/\/ ===== .* =====$/.test(line.trim()))
+          .join("\n")
+          .trim();
+        const matched = submitted === expectedAnswer.trim();
         result = {
           verdict: matched ? "pass" : "fail",
           summary: matched
